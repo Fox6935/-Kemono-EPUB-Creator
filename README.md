@@ -42,6 +42,9 @@ This extension is not available on official browser stores. You can install it m
 4.  **Select manifest.json**: Navigate to the Firefox folder and select the `manifest.json` file.
 5.  **Note for Firefox**: Temporary add-ons are removed when Firefox is closed. To install permanently, you would need to sign the extension. For personal use, reloading it after each browser restart is typical.
 
+### For Mobile
+   You will have to find a browser that lets you add custom extentions (Lemur Browser) and install it. This might require you to pack the extention into a crx file. Good luck. I can confirm it does work.
+
 ## Usage
 
 1.  **Navigate to Kemono.su**: Go to any creator's page on `kemono.su` (e.g., `https://kemono.su/patreon/user/12345`).
