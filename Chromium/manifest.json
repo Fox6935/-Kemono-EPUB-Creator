@@ -1,0 +1,28 @@
+// manifest.json
+{
+  "manifest_version": 3,
+  "name": "Kemono EPUB Creator (Reload-only)",
+  "version": "1.0",
+  "description": "Generate EPUBs from Kemono.su posts in a new tab. Requires page reload for updates.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://kemono.su/*"],
+      "js": ["content-script.js"], // Only content-script.js
+      "run_at": "document_idle" // Run when DOM is mostly ready
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": [
+    "https://kemono.su/",
+    "https://img.kemono.su/",
+    "*://*.kemono.su/*"
+  ]
+}
