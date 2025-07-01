@@ -7,7 +7,7 @@ const KEMONO_IMG_BASE_URL = 'https://img.kemono.su';
 const KEMONO_DATA_BASE_URL = 'https://kemono.su/data';
 
 const POSTS_PER_PAGE_FOR_LIST = 50;
-const API_CALL_DELAY = 1000;
+const API_CALL_DELAY = 500;
 
 // --- Utility: Rate Limiter ---
 let lastApiCallTime = 0;
