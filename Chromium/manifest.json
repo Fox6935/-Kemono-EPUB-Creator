@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Kemono EPUB Creator (Reload-only)",
+  "name": "Kemono EPUB Creator",
   "version": "1.2.0",
   "description": "Generate EPUBs from Kemono posts in a new tab.",
   "icons": {
@@ -25,3 +25,4 @@
     "*://*.kemono.cr/*"
   ]
 }
+
