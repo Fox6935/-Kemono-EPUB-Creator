@@ -1,88 +1,144 @@
-<!-- epub_creator.html -->
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
     <title>Kemono EPUB Creator</title>
-    <link rel="stylesheet" href="index.css">
-</head>
-<body>
-    <!-- The main container for the EPUB creator UI -->
+    <link rel="stylesheet" href="index.css" />
+  </head>
+  <body>
     <div id="epub-creator-container" class="epub-creator-container">
-        <!-- New: Initial loading message element -->
-        <p id="initial-loading-message" class="message-text info-message" style="display: none;"></p>
+      <p
+        id="initial-loading-message"
+        class="message-text info-message"
+        style="display: none;"
+      ></p>
 
-        <!-- New: Wrapper div for all the main content sections -->
-        <div id="main-content-sections-wrapper" style="display: flex; flex-direction: column; align-items: center; gap: 25px; width: 100%;">
-            <h2 class="epub-creator-title">Create EPUB for: <span id="creator-name-display"></span></h2>
+      <div
+        id="main-content-sections-wrapper"
+        style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 25px;
+          width: 100%;
+        "
+      >
+        <h2 class="epub-creator-title">
+          Create EPUB for: <span id="creator-name-display"></span>
+        </h2>
 
-            <p id="error-message-div" class="message-text error-message" style="display: none;"></p>
+        <p
+          id="error-message-div"
+          class="message-text error-message"
+          style="display: none;"
+        ></p>
 
-            <div class="epub-options-section">
-                <div class="form-group">
-                    <label for="fileNameInput">EPUB Filename:</label>
-                    <input id="fileNameInput" type="text" value=""/>
-                </div>
-                <!-- NEW: Filename Pattern Selection -->
-                <div class="form-group">
-                    <label for="filenamePatternSelect">Filename Pattern:</label>
-                    <select id="filenamePatternSelect">
-                        <option value="titles_only">Titles Only (e.g., Chapter_1-Chapter_2)</option>
-                        <option value="creator_titles">Creator_Titles (e.g., CreatorName_Chapter_1-Chapter_2)</option>
-                        <option value="creator_numbers">Creator_Numbers (e.g., CreatorName_1-2)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="coverImageUrlInput">Cover Image URL (Optional):</label>
-                    <input id="coverImageUrlInput" type="url" placeholder="e.g., https://img.kemono.su/icons/..."/>
-                    <img id="cover-preview-img" src="" alt="Cover preview" class="cover-preview-epub" style="display: none;"/>
-                </div>
-            </div>
-
-            <div class="epub-progress-section">
-                <button id="packEpubButton" class="button-primary">Pack 0 Post(s) as EPUB</button>
-                <progress id="progressBar" value="0" max="100" style="display: none;"></progress>
-                <span id="progressMsgSpan" class="progress-message" style="display: none;"></span>
-            </div>
-
-            <div class="chapter-selection-section">
-                <h3>Select Posts to Include (<span id="selected-posts-count">0</span> / <span id="total-posts-count">0</span>)</h3>
-                <div class="chapter-selection-controls">
-                    <button id="selectAllBtn">Select All Displayed</button>
-                    <button id="unselectAllBtn">Unselect All Displayed</button>
-                </div>
-                <div class="range-selector-container">
-                    <div class="range-selector-row">
-                        <label for="selectRangeStartChapter">First Chapter:</label>
-                        <select id="selectRangeStartChapter"></select>
-                    </div>
-                    <div class="range-selector-row">
-                        <label for="selectRangeEndChapter">Last Chapter:</label>
-                        <select id="selectRangeEndChapter"></select>
-                    </div>
-                </div>
-                <ul id="chapterListUl" class="chapter-list-epub">
-                    <!-- Posts will be injected here by JS -->
-                </ul>
-                <div class="load-posts-controls">
-                    <button id="loadMoreBtn" style="display: none;">Load Next 50 Posts</button>
-                    <button id="loadAllBtn" style="display: none;">Load All Remaining Posts</button>
-                    <p id="loadMoreMessage" class="message-text info-message" style="display: none;"></p>
-                </div>
-                <p id="noPostsFoundMessage" class="message-text" style="display: none;">No posts found for this creator to list.</p>
-            </div>
+        <div class="epub-options-section">
+          <div class="form-group">
+            <label for="fileNameInput">EPUB Filename:</label>
+            <input id="fileNameInput" type="text" value="" />
+          </div>
+          <div class="form-group">
+            <label for="filenamePatternSelect">Filename Pattern:</label>
+            <select id="filenamePatternSelect">
+              <option value="titles_only">
+                Titles Only (e.g., Chapter_1-Chapter_2)
+              </option>
+              <option value="creator_titles">
+                Creator_Titles (e.g., CreatorName_Chapter_1-Chapter_2)
+              </option>
+              <option value="creator_numbers">
+                Creator_Numbers (e.g., CreatorName_1-2)
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="coverImageUrlInput">Cover Image URL (Optional):</label>
+            <input
+              id="coverImageUrlInput"
+              type="url"
+              placeholder="e.g., https://img.kemono.cr/icons/..."
+            />
+            <img
+              id="cover-preview-img"
+              src=""
+              alt="Cover preview"
+              class="cover-preview-epub"
+              style="display: none;"
+            />
+          </div>
         </div>
+
+        <div class="epub-progress-section">
+          <button id="packEpubButton" class="button-primary">
+            Pack 0 Post(s) as EPUB
+          </button>
+          <progress
+            id="progressBar"
+            value="0"
+            max="100"
+            style="display: none;"
+          ></progress>
+          <span
+            id="progressMsgSpan"
+            class="progress-message"
+            style="display: none;"
+          ></span>
+        </div>
+
+        <div class="chapter-selection-section">
+          <h3>
+            Select Posts to Include (<span id="selected-posts-count">0</span> /
+            <span id="total-posts-count">0</span>)
+          </h3>
+          <div class="chapter-selection-controls">
+            <button id="selectAllBtn">Select All Displayed</button>
+            <button id="unselectAllBtn">Unselect All Displayed</button>
+          </div>
+          <div class="range-selector-container">
+            <div class="range-selector-row">
+              <label for="selectRangeStartChapter">First Chapter:</label>
+              <select id="selectRangeStartChapter"></select>
+            </div>
+            <div class="range-selector-row">
+              <label for="selectRangeEndChapter">Last Chapter:</label>
+              <select id="selectRangeEndChapter"></select>
+            </div>
+          </div>
+          <ul id="chapterListUl" class="chapter-list-epub"></ul>
+          <div class="load-posts-controls">
+            <button id="loadMoreBtn" style="display: none;">
+              Load Next 50 Posts
+            </button>
+            <button id="loadAllBtn" style="display: none;">
+              Load All Remaining Posts
+            </button>
+            <p
+              id="loadMoreMessage"
+              class="message-text info-message"
+              style="display: none;"
+            ></p>
+          </div>
+          <p
+            id="noPostsFoundMessage"
+            class="message-text"
+            style="display: none;"
+          >
+            No posts found for this creator to list.
+          </p>
+        </div>
+      </div>
     </div>
 
-    <!-- Load Library JavaScript files -->
     <script src="libs/jszip.min.js"></script>
     <script src="libs/FileSaver.min.js"></script>
 
-    <!-- Load your custom JavaScript files -->
     <script type="module" src="kemonoEpubGenerator.js"></script>
-    <!-- IMPORTANT: filenameGenerator.js must be imported BEFORE epub_creator.js -->
     <script type="module" src="filenameGenerator.js"></script>
     <script type="module" src="epub_creator.js"></script>
-</body>
+  </body>
 </html>
