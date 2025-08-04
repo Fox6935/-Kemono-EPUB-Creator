@@ -2,7 +2,6 @@
 
 /**
  * Sanitizes text for use in filenames, replacing invalid characters and truncating.
- * The maxLength is doubled as requested.
  * @param {string} text - The input string to sanitize.
  * @param {number} maxLength - The maximum desired length for the sanitized string.
  * @returns {string} The sanitized and truncated filename part.
