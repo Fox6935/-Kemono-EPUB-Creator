@@ -8,8 +8,8 @@
  * @returns {string} The sanitized and truncated filename part.
  */
 export function sanitizeAndTruncate(text, maxLength) {
-  if (typeof text !== 'string') return '';
-  const sanitized = text.replace(/[/\\?%*:|"<>]/g, '_').replace(/__+/g, '_');
+  if (typeof text !== "string") return "";
+  const sanitized = text.replace(/[/\\?%*:|"<>]/g, "_").replace(/__+/g, "_");
   return sanitized.substring(0, maxLength);
 }
 
@@ -22,7 +22,7 @@ export function sanitizeAndTruncate(text, maxLength) {
  */
 export function truncateTitle(title, maxLength = 70) {
   // Doubled from 35
-  if (!title) return 'Untitled';
+  if (!title) return "Untitled";
   return title.length > maxLength ? `${title.substring(0, maxLength)}...` : title;
 }
 
@@ -35,84 +35,81 @@ export function truncateTitle(title, maxLength = 70) {
  */
 function extractFirstNumber(text) {
   const match = text.match(/\d+/);
-  return match ? match[0] : '';
+  return match ? match[0] : "";
 }
 
 /**
  * Generates an EPUB filename based on selected posts and a chosen pattern.
- * @param {string} creatorName - The name of the creator.
- * @param {Array<object>} selectedPostsInOrder - An array of selected post objects, sorted chronologically.
- * @param {string} filenamePattern - The chosen pattern for filename generation.
+ * Always uses the creator's display name (from API props.name) provided by caller.
+ * @param {string} creatorName - The display name of the creator.
+ * @param {Array<object>} selectedPostsInOrder - Array of selected posts sorted chronologically.
+ * @param {string} filenamePattern - The chosen pattern.
  * @returns {string} The generated filename (e.g., "my_ebook.epub").
  */
 export function generateDynamicFilename(
   creatorName,
   selectedPostsInOrder,
-  filenamePattern,
+  filenamePattern
 ) {
-  let baseFilename = '';
+  let baseFilename = "";
 
   const numSelected = selectedPostsInOrder.length;
-
-  // Increased limit for creator name
-  const sanitizedCreatorName = sanitizeAndTruncate(creatorName, 60);
+  const sanitizedCreatorName = sanitizeAndTruncate(creatorName || "Unknown", 60);
 
   if (numSelected === 0) {
-    // Default behavior when no chapters are selected (should rarely happen if pack button is disabled)
-    baseFilename = sanitizedCreatorName || 'kemono_ebook';
+    baseFilename = sanitizedCreatorName || "kemono_ebook";
   } else if (numSelected === 1) {
-    const postTitle = sanitizeAndTruncate(selectedPostsInOrder[0].title, 60); // Doubled from 30
+    const postTitle = sanitizeAndTruncate(selectedPostsInOrder[0].title, 60);
     const postNumber = extractFirstNumber(selectedPostsInOrder[0].title);
 
     switch (filenamePattern) {
-      case 'titles_only':
-        baseFilename = postTitle || 'single_post';
+      case "titles_only":
+        baseFilename = postTitle || "single_post";
         break;
-      case 'creator_titles':
-        baseFilename = `${sanitizedCreatorName}_${postTitle || 'single_post'}`;
+      case "creator_titles":
+        baseFilename = `${sanitizedCreatorName}_${postTitle || "single_post"}`;
         break;
-      case 'creator_numbers':
+      case "creator_numbers":
         if (postNumber) {
           baseFilename = `${sanitizedCreatorName}_${postNumber}`;
         } else {
-          // Fallback to title if no number found for single post
-          baseFilename = `${sanitizedCreatorName}_${postTitle || 'single_post'}`;
+          baseFilename = `${sanitizedCreatorName}_${postTitle || "single_post"}`;
         }
         break;
-      default: // Fallback for any unknown pattern or if not explicitly set
-        baseFilename = postTitle || 'single_post';
+      default:
+        baseFilename = postTitle || "single_post";
         break;
     }
   } else {
-    // Multiple chapters case (existing logic, adjusted limits)
     const firstPost = selectedPostsInOrder[0];
     const lastPost = selectedPostsInOrder[numSelected - 1];
-
-    const firstTitle = sanitizeAndTruncate(firstPost.title, 30); // Max 30 for combined titles
-    const lastTitle = sanitizeAndTruncate(lastPost.title, 30); // Max 30 for combined titles
+    const firstTitle = sanitizeAndTruncate(firstPost.title, 30);
+    const lastTitle = sanitizeAndTruncate(lastPost.title, 30);
 
     switch (filenamePattern) {
-      case 'titles_only':
-        baseFilename = `${firstTitle || 'start'}-${lastTitle || 'end'}`;
+      case "titles_only":
+        baseFilename = `${firstTitle || "start"}-${lastTitle || "end"}`;
         break;
-      case 'creator_titles':
-        baseFilename = `${sanitizedCreatorName}_${firstTitle || 'start'}-${lastTitle || 'end'}`;
+      case "creator_titles":
+        baseFilename = `${sanitizedCreatorName}_${firstTitle || "start"}-${
+          lastTitle || "end"
+        }`;
         break;
-      case 'creator_numbers':
+      case "creator_numbers":
         const firstNumber = extractFirstNumber(firstPost.title);
         const lastNumber = extractFirstNumber(lastPost.title);
         if (firstNumber && lastNumber) {
           baseFilename = `${sanitizedCreatorName}_${firstNumber}-${lastNumber}`;
         } else if (firstNumber) {
-          // Fallback if only one number is found
           baseFilename = `${sanitizedCreatorName}_${firstNumber}`;
         } else {
-          // Fallback to titles if no numbers found
-          baseFilename = `${sanitizedCreatorName}_${firstTitle || 'start'}-${lastTitle || 'end'}`;
+          baseFilename = `${sanitizedCreatorName}_${firstTitle || "start"}-${
+            lastTitle || "end"
+          }`;
         }
         break;
-      default: // Fallback to titles_only for any unknown pattern or if not explicitly set
-        baseFilename = `${firstTitle || 'start'}-${lastTitle || 'end'}`;
+      default:
+        baseFilename = `${firstTitle || "start"}-${lastTitle || "end"}`;
         break;
     }
   }
