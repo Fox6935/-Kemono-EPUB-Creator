@@ -1,7 +1,7 @@
 // epub_creator.js
 // Pure HTML/JS logic for the EPUB creator UI in a new tab.
 
-import { generateKemonoEpub, fetchPostListPage } from "./kemonoEpubGenerator.js";
+import { generateKemonoEpub, fetchPostListPage, fetchCreatorProfile } from "./kemonoEpubGenerator.js";
 import {
   sanitizeAndTruncate,
   truncateTitle,
@@ -244,7 +244,8 @@ function updateOverallUIState() {
     selectRangeStartChapter.disabled =
       isPacking || allFetchedPosts.length === 0;
   if (selectRangeEndChapter)
-    selectRangeEndChapter.disabled = isPacking || allFetchedPosts.length === 0;
+    selectRangeEndChapter.disabled =
+      isPacking || allFetchedPosts.length === 0;
 
   const showLoadingMessage = isLoadingPosts && allFetchedPosts.length === 0;
   const showNoPostsMessage =
@@ -302,6 +303,24 @@ async function loadPostsPage(offsetToLoad, loadAll = false) {
     allFetchedPosts = [];
     totalAvailablePosts = 0;
     selectedPosts = {};
+    
+    // First, fetch the creator profile to get the total post count
+    try {
+      const { postCount, creatorName: apiCreatorName } = await fetchCreatorProfile(service, creatorId);
+      totalAvailablePosts = postCount;
+      
+      // Capture creatorName from API
+      if (typeof apiCreatorName === "string" && apiCreatorName.trim()) {
+        creatorName = apiCreatorName.trim();
+      }
+    } catch (err) {
+      error = err.message || "Failed to load creator profile.";
+      console.error("Error fetching creator profile:", err);
+      isLoadingPosts = false;
+      isLoadingMore = false;
+      updateOverallUIState();
+      return;
+    }
   }
 
   if (offsetToLoad === 0 && !loadAll) isLoadingPosts = true;
@@ -315,29 +334,12 @@ async function loadPostsPage(offsetToLoad, loadAll = false) {
 
   try {
     while (stillFetching) {
-      const {
-        posts: newPosts,
-        totalCount: apiTotalCount,
-        creatorName: apiCreatorName
-      } = await fetchPostListPage(
+      const { posts: newPosts } = await fetchPostListPage(
         service,
         creatorId,
         currentFetchOffset,
         POSTS_PER_PAGE_FOR_LIST
       );
-
-      // Capture creatorName from API on first page
-      if (
-        offsetToLoad === 0 &&
-        typeof apiCreatorName === "string" &&
-        apiCreatorName.trim()
-      ) {
-        creatorName = apiCreatorName.trim();
-      }
-
-      if (apiTotalCount > totalAvailablePosts) {
-        totalAvailablePosts = apiTotalCount;
-      }
 
       const existingIds = new Set(accumulatedPosts.map((p) => p.id));
       const uniqueNewPosts = newPosts.filter((p) => !existingIds.has(p.id));
