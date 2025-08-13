@@ -146,60 +146,10 @@ class KemonoContentParser {
     }
   }
 
+  // Bulk fetching is no longer possible with the new API
   async prepareForBulkFetch(selectedPostStubs) {
-    if (!selectedPostStubs || selectedPostStubs.length === 0) {
-      this.reportProgress("No selected posts for bulk fetch.");
-      return;
-    }
-
-    this.reportProgress("Determining relevant offsets for bulk fetch...");
-    const offsetsToFetch = new Set();
-
-    for (const stub of selectedPostStubs) {
-      if (stub.originalOffset !== undefined) {
-        offsetsToFetch.add(stub.originalOffset);
-        const prev = stub.originalOffset - POSTS_PER_PAGE_FOR_LIST;
-        if (prev >= 0) offsetsToFetch.add(prev);
-      }
-    }
-
-    if (offsetsToFetch.size === 0) {
-      this.reportProgress(
-        "No valid offsets identified for bulk fetch. Posts will be fetched individually."
-      );
-      return;
-    }
-
-    const sorted = Array.from(offsetsToFetch).sort((a, b) => a - b);
-    this.reportProgress(
-      `Identified ${sorted.length} unique page offsets for bulk fetch: ${sorted.join(", ")}`
-    );
-
-    for (let i = 0; i < sorted.length; i++) {
-      const offset = sorted[i];
-      const url = `${KEMONO_API_BASE_URL}/${this.service}/user/${this.creatorId}?o=${offset}`;
-      try {
-        this.reportProgress(
-          `Bulk fetching page offset ${offset} (${i + 1}/${sorted.length})...`
-        );
-        const postsOnPage = await HttpClient.fetchJson(url);
-        if (Array.isArray(postsOnPage)) {
-          for (const p of postsOnPage) {
-            if (p && p.id) this.postCache.set(String(p.id), p);
-          }
-          this.reportProgress(`Bulk fetched offset ${offset}: ${postsOnPage.length} posts cached.`);
-        } else {
-          console.warn("Unexpected bulk page result:", postsOnPage);
-          this.reportProgress(
-            `Warning: Bulk fetch for offset ${offset} returned unexpected data.`
-          );
-        }
-      } catch (error) {
-        console.error(`Error bulk fetching offset ${offset}:`, error);
-        this.reportProgress(`Error bulk fetching offset ${offset}: ${error.message.substring(0, 50)}...`);
-      }
-    }
-    this.reportProgress("Bulk fetch attempt complete.");
+    this.reportProgress("Bulk fetching is no longer available with the new API. Posts will be fetched individually.");
+    return;
   }
 
   // Parse raw content first, fetch/replace inline images, then sanitize for XHTML
@@ -485,7 +435,7 @@ class EpubPacker {
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
-<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1" xml:lang="${escapeXml(this.metadata.language)}">
+<ncx xmlns="http://www.daisy.org/2005/ncx/" version="2005-1" xml:lang="${escapeXml(this.metadata.language)}">
   <head>
     <meta name="dtb:uid" content="${escapeXml(this.metadata.uuid)}"/>
     <meta name="dtb:depth" content="1"/>
@@ -546,7 +496,27 @@ class EpubPacker {
 // --- API exports ---
 
 /**
- * Fetch a paginated list of post stubs plus total count and creator display name.
+ * Fetch creator profile to get the total post count and creator name.
+ */
+export const fetchCreatorProfile = async (service, creatorId) => {
+  const url = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/profile`;
+  try {
+    const data = await HttpClient.fetchJson(url);
+    return {
+      postCount: data.post_count || 0,
+      creatorName: data.name || ""
+    };
+  } catch (error) {
+    console.error(
+      `Error fetching creator profile for ${service}/${creatorId}:`,
+      error
+    );
+    throw error;
+  }
+};
+
+/**
+ * Fetch a paginated list of post stubs.
  */
 export const fetchPostListPage = async (
   service,
@@ -554,21 +524,18 @@ export const fetchPostListPage = async (
   offset,
   limit = POSTS_PER_PAGE_FOR_LIST
 ) => {
-  const url = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/posts-legacy?o=${offset}&limit=${limit}`;
+  const url = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/posts?o=${offset}`;
   try {
     const data = await HttpClient.fetchJson(url);
-    const results = data.results || [];
-    const totalCount = data.props?.count || 0;
-    const creatorName = data.props?.name || data.props?.artist?.name || "";
-
-    const posts = results.map((post) => ({
+    
+    const posts = data.map((post) => ({
       id: String(post.id),
       title: post.title || `Untitled Post ${post.id}`,
       published: post.published,
       originalOffset: offset
     }));
 
-    return { posts, totalCount, creatorName };
+    return { posts };
   } catch (error) {
     console.error(
       `Error fetching post list page (offset ${offset}) for ${service}/${creatorId}:`,
@@ -658,22 +625,22 @@ img { max-width: 100%; height: auto; display: block; margin: 1em auto; border-ra
   if (selectedPostStubs.length > 0) {
     progressCallback(
       currentProgress,
-      `Preparing for bulk fetch (${selectedPostStubs.length} posts)...`
+      `Preparing for individual post fetching (${selectedPostStubs.length} posts)...`
     );
     try {
       await parser.prepareForBulkFetch(selectedPostStubs);
     } catch (error) {
-      console.error("Error during bulk fetch preparation phase:", error);
+      console.error("Error during preparation phase:", error);
       progressCallback(
         currentProgress,
-        `Bulk fetch prep failed: ${error.message.substring(0, 30)}`
+        `Preparation failed: ${error.message.substring(0, 30)}`
       );
     }
   }
   currentProgress += WEIGHT_BULK_FETCH;
   progressCallback(
     currentProgress,
-    "Bulk fetch phase finished. Processing individual posts..."
+    "Preparation phase finished. Processing individual posts..."
   );
 
   const numSelectedPosts = selectedPostStubs.length;
