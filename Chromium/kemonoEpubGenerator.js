@@ -23,19 +23,38 @@ async function ensureApiRateLimit() {
 
 // --- HTTP helpers ---
 const HttpClient = {
+  /**
+   * Perform a GET request that expects JSON data.
+   * The Kemono API currently requires the header `Accept: text/css`
+   * (see the 403 error message you received). Adding the header
+   * satisfies the API while still returning JSON because the endpoint
+   * itself returns `application/json` regardless of the Accept value.
+   */
   fetchJson: async (url) => {
     await ensureApiRateLimit();
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      // The API insists on this header; it does not affect the JSON payload.
+      headers: { Accept: "text/css" }
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => "Failed to read error response.");
       console.error(`HTTP Error ${res.status} for ${url}: ${text}`);
-      throw new Error(`API request failed: ${res.status} - ${text.substring(0, 200)}`);
+      throw new Error(
+        `API request failed: ${res.status} - ${text.substring(0, 200)}`
+      );
     }
     return res.json();
   },
+
+  /**
+   * Perform a GET request that expects a binary asset (image, etc.).
+   * The same `Accept` header is required for consistency with the API.
+   */
   fetchBlob: async (url) => {
     await ensureApiRateLimit();
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { Accept: "text/css" }
+    });
     if (!res.ok) {
       console.error(`HTTP Error ${res.status} for asset ${url}`);
       throw new Error(`Asset request failed: ${res.status}`);
@@ -706,3 +725,4 @@ img { max-width: 100%; height: auto; display: block; margin: 1em auto; border-ra
   progressCallback(100, "EPUB generated and download started!");
   saveAs(epubBlob, sanitizeFilename(options.fileName || `${displayName}.epub`));
 };
+
