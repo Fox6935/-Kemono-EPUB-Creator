@@ -34,6 +34,8 @@ This extension is not available on official browser stores. You can install it m
 
 ### For Mozilla Firefox
 
+https://addons.mozilla.org/en-CA/android/addon/kemono-epub-creator/
+
 1.  **Download**: Download the Firefox folder in this repository. Make sure the `manifest.json` file is directly inside this folder.
 2.  **Open Add-ons Page**:
     *   Open Firefox.
