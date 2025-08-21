@@ -1,10 +1,10 @@
 // kemonoEpubGenerator.js
 // ---------------------------------------------------------------------
-//  This file creates EPUB from Kemono posts.
+//  This file creates an EPUB from Kemono posts.
 // ---------------------------------------------------------------------
 
 /* ------------------------------------------------------------------
-// 1️⃣  CONFIGURATION
+// CONFIGURATION
 ------------------------------------------------------------------- */
 const KEMONO_API_BASE_URL = "https://kemono.cr/api/v1";
 const KEMONO_SITE_BASE_URL = "https://kemono.cr";
@@ -15,7 +15,7 @@ const POSTS_PER_PAGE_FOR_LIST = 50;
 const API_CALL_DELAY = 500;
 
 /* ------------------------------------------------------------------
-// 2️⃣  SIMPLE RATE‑LIMITER (500 ms between API calls)
+// SIMPLE RATE‑LIMITER (500ms between API calls)
 // ------------------------------------------------------------------- */
 let lastApiCallTime = 0;
 async function ensureApiRateLimit() {
@@ -28,7 +28,7 @@ async function ensureApiRateLimit() {
 }
 
 /* ------------------------------------------------------------------
-// 3️⃣  HTTP HELPER – Kemono API requires `Accept: text/css`
+// HTTP HELPER – Kemono API requires `Accept: text/css`
 // ------------------------------------------------------------------- */
 const HttpClient = {
   async fetchJson(url) {
@@ -56,7 +56,7 @@ const HttpClient = {
 };
 
 /* ------------------------------------------------------------------
-// 4️⃣  FILENAME HELPERS
+// FILENAME HELPERS
 ------------------------------------------------------------------- */
 function sanitizeFilename(filename) {
   if (typeof filename !== "string") return "";
@@ -78,7 +78,7 @@ function sanitizeBasenameForXhtmlStrict(basename) {
 }
 
 /* ------------------------------------------------------------------
-// 5️⃣  XML / HTML HELPERS (sanitise to well‑formed XHTML)
+// XML / HTML HELPERS (sanitise to well‑formed XHTML)
 // ------------------------------------------------------------------- */
 function escapeXml(str) {
   if (str == null) return "";
@@ -104,19 +104,16 @@ function escapeXml(str) {
     .join("&#39;");
 }
 
-/* replace named entities that are not defined in XML */
 function replaceUnsupportedEntities(html) {
   if (!html) return "";
   return html.replace(/&nbsp;/gi, "&#160;");
 }
 
-/* turn <br> into <br /> */
 function normalizeXhtmlVoidTags(html) {
   if (!html) return "";
   return html.replace(/<br(\s*)>/gi, "<br />");
 }
 
-/* self‑close all HTML5 void elements – note the lack of a space before "/>" */
 function selfCloseVoidElements(html) {
   if (!html) return "";
   const voidEls = [
@@ -137,15 +134,22 @@ function selfCloseVoidElements(html) {
     "wbr"
   ];
   voidEls.forEach((tag) => {
-    const re = new RegExp(`<${tag}([^>]*?)>(?!\\s*</${tag}>)`, "gi");
-    html = html.replace(re, `<${tag}$1/>`);
+    const reNormal = new RegExp(`<${tag}([^>]*?)>(?!\\s*</${tag}>)`, "gi");
+    html = html.replace(reNormal, `<${tag}$1/>`);
+
+    // Remove stray extra slashes before the closing `>`
+    const reExtra = new RegExp(
+      `<${tag}([^>]*?)\\s*\\/\\/{2,}>`,
+      "gi"
+    );
+    html = html.replace(reExtra, `<${tag}$1/>`);
   });
-  // Fix stray "//>" that sometimes appears after img tags
-  html = html.replace(/<img([^>]*?)\/\/>/gi, "<img$1/>");
+
+  // Fallback for any remaining patterns
+  html = html.replace(/<([a-z]+)([^>]*)\/\/+>/gi, "<$1$2/>");
   return html;
 }
 
-/* full sanitisation pipeline */
 function sanitizeHtmlContent(htmlString) {
   if (!htmlString) return "";
   const SCRIPT_REGEX =
@@ -158,7 +162,7 @@ function sanitizeHtmlContent(htmlString) {
 }
 
 /* ------------------------------------------------------------------
-// 6️⃣  MIME‑TYPE HELPER (covers the most common cases)
+// MIME‑TYPE HELPER (covers the most common cases)
 // ------------------------------------------------------------------- */
 function mimeTypeFromExtension(ext) {
   ext = ext.toLowerCase();
@@ -171,7 +175,7 @@ function mimeTypeFromExtension(ext) {
 }
 
 /* ------------------------------------------------------------------
-// 7️⃣  IMAGE CONVERSION – everything ends up as PNG (preserves transparency)
+// IMAGE CONVERSION – everything ends up as PNG (preserves transparency)
 // ------------------------------------------------------------------- */
 async function convertToPng(blob) {
   const bitmap = await createImageBitmap(blob);
@@ -183,7 +187,7 @@ async function convertToPng(blob) {
 }
 
 /* ------------------------------------------------------------------
-// 8️⃣  CONTENT PARSER – fetches a post, rewrites inline images, sanitises HTML
+// CONTENT PARSER – fetches a post, rewrites inline images, sanitises HTML
 // ------------------------------------------------------------------- */
 class KemonoContentParser {
   constructor(service, creatorId, progressReporter) {
@@ -257,7 +261,7 @@ class KemonoContentParser {
           `Fetching content image: ${originalSrc.substring(0, 30)}…`
         );
         let blob = await HttpClient.fetchBlob(absoluteSrc);
-        // Convert **everything** to PNG
+        // Convert everything to PNG
         blob = await convertToPng(blob);
         const mime = "image/png";
         const fileNameInEpub = sanitizeFilename(
@@ -290,7 +294,7 @@ class KemonoContentParser {
 }
 
 /* ------------------------------------------------------------------
-// 9️⃣  EPUB PACKER – builds the ZIP structure, OPF, NCX, etc.
+// EPUB PACKER – builds the ZIP structure, OPF, NCX, etc.
 // ------------------------------------------------------------------- */
 class EpubPacker {
   constructor(metadata) {
@@ -301,7 +305,7 @@ class EpubPacker {
     }
 
     // -------------------------------------------------------------
-    // 1️⃣  MIMETYPE – first entry, stored (no compression)
+    // MIMETYPE – first entry, stored (no compression)
     // -------------------------------------------------------------
     this.zip = new JSZip();
     this.zip.file("mimetype", "application/epub+zip", {
@@ -324,9 +328,6 @@ class EpubPacker {
     this.fileCounter = 0;
   }
 
-  // -----------------------------------------------------------------
-  // Container XML (META‑INF/container.xml)
-  // -----------------------------------------------------------------
   addContainerXml() {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0"
@@ -450,10 +451,9 @@ class EpubPacker {
   }
 
   // -----------------------------------------------------------------
-  // Image handling – adds image to manifest (already PNG).
+  // Image handling – adds image to manifest
   // -----------------------------------------------------------------
   async addImageToManifest(imageInfo) {
-    // imageInfo already contains a PNG blob and correct mime type
     const { blob, fileNameInEpub } = imageInfo;
     const imageId = `img-${fileNameInEpub.split(".").shift()}`;
     this.imagesFolder.file(fileNameInEpub, blob);
@@ -512,9 +512,7 @@ class EpubPacker {
 </package>`;
   }
 
-  // -----------------------------------------------------------------
-  // NCX (legacy navigation) – **ns:ncx** with the correct namespace URL.
-  // -----------------------------------------------------------------
+  // NCX (legacy navigation)
   buildTocNcx() {
     const navPoints = this.tocEntries
       .map(
@@ -544,7 +542,7 @@ class EpubPacker {
   }
 
   // -----------------------------------------------------------------
-  // Navigation document for EPUB 3 (toc.xhtml) – no DOCTYPE.
+  // Navigation document for EPUB (toc.xhtml) – no DOCTYPE.
   // -----------------------------------------------------------------
   buildTocXhtml() {
     const listItems = this.tocEntries
@@ -591,17 +589,12 @@ class EpubPacker {
       compressionOptions: { level: 6 }
     });
   }
-
-  // -----------------------------------------------------------------
-  // Compatibility shim – old code called this; now a no‑op.
-  // -----------------------------------------------------------------
   packContentFiles(/* zipWriter, epubItemSupplier */) {
-    // no‑op
   }
 }
 
 /* ------------------------------------------------------------------
-// 10️⃣  API EXPORTS – fetch creator profile, post list, generate EPUB
+// API EXPORTS – fetch creator profile, post list, generate EPUB
 // ------------------------------------------------------------------- */
 export async function fetchCreatorProfile(service, creatorId) {
   const url = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/profile`;
@@ -662,7 +655,6 @@ export async function generateKemonoEpub(
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
       return crypto.randomUUID();
     }
-    // Simple fallback RFC‑4122 v4 generator.
     const hex = [...Array(16)]
       .map(() => Math.floor(Math.random() * 256))
       .map((b) => b.toString(16).padStart(2, "0"));
