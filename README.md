@@ -1,10 +1,10 @@
 # -Kemono-EPUB-Creator
 
-A browser extension to easily download selected posts from Kemono.su as organized EPUB ebooks. This extension provides a user-friendly interface to browse posts, select a range or specific chapters, choose dynamic filename formats, and compile them into a readable EPUB file, complete with images and a table of contents.
+A browser extension to easily download selected posts from Kemono.cr as organized EPUB ebooks. This extension provides a user-friendly interface to browse posts, select a range or specific chapters, choose dynamic filename formats, and compile them into a readable EPUB file, complete with images and a table of contents.
 
 ## Features
 
-*   **EPUB Generation**: Convert multiple Kemono.su posts into a single, well-structured EPUB file.
+*   **EPUB Generation**: Convert multiple Kemono posts into a single, well-structured EPUB file.
 *   **Image Inclusion**: Automatically downloads and embeds images from post content.
 *   **Table of Contents**: Generates an interactive Table of Contents (TOC) within the EPUB for easy navigation.
 *   **Chapter Selection**: Select individual posts or define a range of chapters to include.
@@ -16,11 +16,11 @@ A browser extension to easily download selected posts from Kemono.su as organize
     *   Manually edit the filename, with the option to revert to dynamic generation.
 *   **Cover Image Support**: Optionally set a custom cover image URL for your EPUB (defaults to the creator's icon).
 *   **Progress Tracking**: Live progress updates during EPUB generation and image downloading.
-*   **Cross-Browser Compatibility**: Designed to work on Chromium-based browsers (Chrome, Brave, Edge) and Firefox.
+*   **Cross-Browser Compatibility**: Designed to work on both Firefox and Chromium-based browsers (Chrome, Brave, Edge).
 
 ## Installation
 
-This extension is not available on official browser stores. You can install it manually by loading it as an unpacked extension.
+This extension is <s>not available on official browser stores</s> now availible on the [Firefox store](https://addons.mozilla.org/en-US/firefox/addon/kemono-epub-creator/). You can install it manually on chromium browsers by loading it as an unpacked extension.
 
 ### For Chromium-based Browsers (Chrome, Brave, Edge, Opera, Vivaldi)
 
@@ -34,8 +34,9 @@ This extension is not available on official browser stores. You can install it m
 
 ### For Mozilla Firefox
 
-https://addons.mozilla.org/en-CA/android/addon/kemono-epub-creator/
+**Firefox add-on store link**: https://addons.mozilla.org/en-US/firefox/addon/kemono-epub-creator/
 
+**Or follow instructions to load temporary add-on**
 1.  **Download**: Download the Firefox folder in this repository. Make sure the `manifest.json` file is directly inside this folder.
 2.  **Open Add-ons Page**:
     *   Open Firefox.
@@ -45,12 +46,12 @@ https://addons.mozilla.org/en-CA/android/addon/kemono-epub-creator/
 5.  **Note for Firefox**: Temporary add-ons are removed when Firefox is closed. To install permanently, you would need to sign the extension. For personal use, reloading it after each browser restart is typical.
 
 ### For Mobile
-   You will have to find a browser that lets you add custom extentions (Lemur Browser) and install it. This might require you to pack the extention into a crx file. Good luck. I can confirm it does work.
+   You can install the extension on Firefox mobile through the store, or find a browser Chromium that lets you add un-signed extentions (Lemur Browser) and install it. This might require you to pack the extention into a crx file. Good luck.
 
 ## Usage
 
-1.  **Navigate to Kemono.su**: Go to any creator's page on `kemono.su` (e.g., `https://kemono.su/patreon/user/12345`).
-2.  **Click the "Dowload EPUB" button**: It the button does not appear in the user-header card, reload the page. The extention won't detect the creators page loading unless the page is loaded from an external link or reloaded. For example, navigating internally on kemono.su won't load the button. 
+1.  **Navigate to Kemono.cr**: Go to any creator's page on `kemono.cr` (e.g., `https://kemono.cr/patreon/user/12345`).
+2.  **Click the "Dowload EPUB" button**: If the button does not appear in the user-header card, reload the page. The extension won't detect the creators page loading unless the page is loaded from an external link or reloaded. For example, navigating internally on kemono.cr won't load the button. 
 3.  **EPUB Creator Tab**: A new tab will open with the EPUB Creator interface.
 4.  **Load Posts**: The extension will automatically start loading the creator's posts. Wait for the list to populate.
 5.  **Select Chapters**:
@@ -69,3 +70,11 @@ https://addons.mozilla.org/en-CA/android/addon/kemono-epub-creator/
 ## Disclaimer
 
 This extension is provided as-is, without warranty of any kind. Use at your own risk. It interacts with a third-party website, Kemono.su, and its functionality may be affected by changes to that website's structure or API.
+
+## Issues and Future plans (not implimented yet)
+
+*   Allow for clicking the extension icon to open the epub creator
+*   Add support for tags
+*   Fix post count - currently using `profile` endpoint to get the current total post count, which is usually wrong right after posts are added, and can cause minor buggy behaviour with the count when all posts are loaded.
+    *   Ironically, the best way to get post_count is to send a GET request `/posts?o=100000`and the response is a error code 400: `{"error":"Offset 100000 is bigger than total count 562."}` with 562 in this case being the actual post_count.
+
