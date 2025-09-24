@@ -1,11 +1,7 @@
 // kemonoEpubGenerator.js
-// ---------------------------------------------------------------------
 //  This file creates an EPUB from Kemono posts.
-// ---------------------------------------------------------------------
 
-/* ------------------------------------------------------------------
 // CONFIGURATION
-------------------------------------------------------------------- */
 const KEMONO_API_BASE_URL = "https://kemono.cr/api/v1";
 const KEMONO_SITE_BASE_URL = "https://kemono.cr";
 const KEMONO_IMG_BASE_URL = "https://img.kemono.cr";
@@ -13,10 +9,9 @@ const KEMONO_DATA_BASE_URL = "https://kemono.cr/data";
 
 const POSTS_PER_PAGE_FOR_LIST = 50;
 const API_CALL_DELAY = 500;
+const LARGE_OFFSET_FOR_COUNT = 100000;  // For reliable post count via error parsing
 
-/* ------------------------------------------------------------------
 // SIMPLE RATE‑LIMITER (500ms between API calls)
-// ------------------------------------------------------------------- */
 let lastApiCallTime = 0;
 async function ensureApiRateLimit() {
   const now = Date.now();
@@ -27,9 +22,7 @@ async function ensureApiRateLimit() {
   lastApiCallTime = Date.now();
 }
 
-/* ------------------------------------------------------------------
 // HTTP HELPER – Kemono API requires `Accept: text/css`
-// ------------------------------------------------------------------- */
 const HttpClient = {
   async fetchJson(url) {
     await ensureApiRateLimit();
@@ -55,9 +48,19 @@ const HttpClient = {
   }
 };
 
-/* ------------------------------------------------------------------
+// Fetch tags list for filtering/bulk fetch optimization
+export async function fetchTagsList(service, creatorId) {
+  const url = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/tags`;
+  try {
+    const tags = await HttpClient.fetchJson(url);
+    return Array.isArray(tags) ? tags.filter(t => t.tag && t.post_count > 0) : [];
+  } catch (error) {
+    console.warn(`Failed to fetch tags for ${service}/${creatorId}:`, error);
+    return [];
+  }
+}
+
 // FILENAME HELPERS
-------------------------------------------------------------------- */
 function sanitizeFilename(filename) {
   if (typeof filename !== "string") return "";
   const sanitized = filename
@@ -77,9 +80,7 @@ function sanitizeBasenameForXhtmlStrict(basename) {
   return name.substring(0, 120);
 }
 
-/* ------------------------------------------------------------------
-// XML / HTML HELPERS (sanitise to well‑formed XHTML)
-// ------------------------------------------------------------------- */
+// XML / HTML HELPERS
 function escapeXml(str) {
   if (str == null) return "";
   const s = String(str);
@@ -117,27 +118,13 @@ function normalizeXhtmlVoidTags(html) {
 function selfCloseVoidElements(html) {
   if (!html) return "";
   const voidEls = [
-    "area",
-    "base",
-    "br",
-    "col",
-    "embed",
-    "hr",
-    "img",
-    "input",
-    "keygen",
-    "link",
-    "meta",
-    "param",
-    "source",
-    "track",
-    "wbr"
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "keygen", "link", "meta", "param", "source", "track", "wbr"
   ];
   voidEls.forEach((tag) => {
     const reNormal = new RegExp(`<${tag}([^>]*?)>(?!\\s*</${tag}>)`, "gi");
     html = html.replace(reNormal, `<${tag}$1/>`);
 
-    // Remove stray extra slashes before the closing `>`
     const reExtra = new RegExp(
       `<${tag}([^>]*?)\\s*\\/\\/{2,}>`,
       "gi"
@@ -145,7 +132,6 @@ function selfCloseVoidElements(html) {
     html = html.replace(reExtra, `<${tag}$1/>`);
   });
 
-  // Fallback for any remaining patterns
   html = html.replace(/<([a-z]+)([^>]*)\/\/+>/gi, "<$1$2/>");
   return html;
 }
@@ -161,9 +147,7 @@ function sanitizeHtmlContent(htmlString) {
   return sanitized;
 }
 
-/* ------------------------------------------------------------------
-// MIME‑TYPE HELPER (covers the most common cases)
-// ------------------------------------------------------------------- */
+// MIME-TYPE HELPER (covers the most common cases)
 function mimeTypeFromExtension(ext) {
   ext = ext.toLowerCase();
   if (ext === "png") return "image/png";
@@ -174,9 +158,7 @@ function mimeTypeFromExtension(ext) {
   return "application/octet-stream";
 }
 
-/* ------------------------------------------------------------------
 // IMAGE CONVERSION – everything ends up as PNG (preserves transparency)
-// ------------------------------------------------------------------- */
 async function convertToPng(blob) {
   const bitmap = await createImageBitmap(blob);
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
@@ -186,9 +168,7 @@ async function convertToPng(blob) {
   return pngBlob;
 }
 
-/* ------------------------------------------------------------------
 // CONTENT PARSER – fetches a post, rewrites inline images, sanitises HTML
-// ------------------------------------------------------------------- */
 class KemonoContentParser {
   constructor(service, creatorId, progressReporter) {
     this.service = service;
@@ -198,6 +178,7 @@ class KemonoContentParser {
   }
 
   async fetchPostFullData(postId) {
+    postId = String(postId);
     if (this.postCache.has(postId)) {
       this.reportProgress(`Cache hit for post ${postId.substring(0, 10)}…`);
       return this.postCache.get(postId);
@@ -212,7 +193,7 @@ class KemonoContentParser {
       if (!postDetail || !postDetail.id) {
         throw new Error(`Post data for ${postId} is malformed or missing.`);
       }
-      this.postCache.set(postId, postDetail);
+      this.postCache.set(postId, postDetail);  // Cache full data
       return postDetail;
     } catch (error) {
       console.error(`Error fetching post ${postId}:`, error);
@@ -226,22 +207,109 @@ class KemonoContentParser {
     }
   }
 
-  async prepareForBulkFetch() {
-    this.reportProgress(
-      "Bulk fetching is no longer available with the new API. Posts will be fetched individually."
-    );
+  /* ------------------------------------------------------------------
+  // BULK FETCH PREP – Uses q=<p> for broad full-content coverage
+  // Overrides with UI tagFilter (if high post_count) or customQ.
+  // Caches full post data from responses. Uses selected posts' offsets.
+  // ------------------------------------------------------------------- */
+  async prepareForBulkFetch(selectedPostStubs, { customQ, tagFilter } = {}) {
+    if (!selectedPostStubs || selectedPostStubs.length === 0) {
+      this.reportProgress("No selected posts for bulk fetch.");
+      return;
+    }
+
+    let bulkParamType = 'q';
+    let bulkValue = customQ || '<p>';
+    let bulkTag = tagFilter || "";
+
+    if (bulkTag) {
+      try {
+        const tags = await fetchTagsList(this.service, this.creatorId);
+        const matchingTag = tags.find(t => t.tag === bulkTag && t.post_count >= selectedPostStubs.length);
+        if (matchingTag) {
+          bulkParamType = 'tag';
+          bulkValue = bulkTag;
+          this.reportProgress(`Using tag '${bulkValue}' for bulk fetch (covers ${matchingTag.post_count} posts).`);
+        } else {
+          console.warn(`Tag '${bulkTag}' post_count too low; falling back to q=<p>.`);
+          bulkParamType = 'q';
+          bulkValue = '<p';
+        }
+      } catch (e) {
+        console.warn("Tag check failed, using q=<p>:", e);
+        bulkParamType = 'q';
+        bulkValue = '<p';
+      }
+    } else if (customQ && customQ.length < 3) {
+      console.warn("Custom q too short; using default q=<p>.");
+      bulkValue = '<p';
+    }
+
+    this.reportProgress(`Bulk fetching with ${bulkParamType}=${bulkValue} to cover ${selectedPostStubs.length} posts...`);
+
+    const offsetsToFetch = new Set();
+    for (const stub of selectedPostStubs) {
+      if (stub.originalOffset !== undefined) {
+        offsetsToFetch.add(stub.originalOffset);
+        const prevOffset = stub.originalOffset - POSTS_PER_PAGE_FOR_LIST;
+        if (prevOffset >= 0) offsetsToFetch.add(prevOffset);
+      }
+    }
+
+    if (offsetsToFetch.size === 0) {
+      this.reportProgress("No offsets from selected posts; fetching individually.");
+      return;
+    }
+
+    const sortedOffsets = Array.from(offsetsToFetch).sort((a, b) => a - b);
+    this.reportProgress(`Fetching ${sortedOffsets.length} pages via bulk...`);
+
+    for (let i = 0; i < sortedOffsets.length; i++) {
+      const offset = sortedOffsets[i];
+      let url = `${KEMONO_API_BASE_URL}/${this.service}/user/${this.creatorId}/posts?o=${offset}`;
+      if (bulkParamType === 'tag') {
+        url += `&tag=${encodeURIComponent(bulkValue)}`;
+      } else {
+        url += `&q=${encodeURIComponent(bulkValue)}`;
+      }
+
+      try {
+        this.reportProgress(`Bulk page ${i + 1}/${sortedOffsets.length} (offset ${offset})...`);
+        const postsOnPage = await HttpClient.fetchJson(url);
+        if (Array.isArray(postsOnPage)) {
+          let cachedCount = 0;
+          for (const fullPost of postsOnPage) {
+            if (fullPost && fullPost.id) {
+              this.postCache.set(String(fullPost.id), fullPost);
+              cachedCount++;
+            }
+          }
+          this.reportProgress(`Cached ${cachedCount} full posts from offset ${offset}.`);
+        } else {
+          console.warn(`Unexpected bulk response at offset ${offset}:`, postsOnPage);
+        }
+      } catch (error) {
+        console.error(`Bulk fetch failed for offset ${offset}:`, error);
+        this.reportProgress(`Bulk offset ${offset} error: ${error.message.substring(0, 50)}...`);
+      }
+    }
+
+    const hitRate = (selectedPostStubs.filter(s => this.postCache.has(s.id)).length / selectedPostStubs.length) * 100;
+    this.reportProgress(`Bulk complete. Cache hit rate for selected: ~${hitRate.toFixed(0)}%. Remaining will fetch individually.`);
   }
 
   /**
-   * Parse raw HTML, download any inline images, rewrite <img> src to a
-   * relative path inside the EPUB, then sanitise the HTML.
+   * Parse raw HTML, download/rewrite inline images from content, 
+   * PLUS handle attachments (fetch images, package, rewrite all references in HTML).
+   * All images (inline + attachments) are converted to PNG.
    */
   async processPostImagesAndContent(postData) {
     const rawHtml = postData.content || "";
     const imagesToPackage = [];
+    const attachmentsToPackage = [];
 
     const parser = new DOMParser();
-    const doc = parser.parseFromString(rawHtml, "text/html");
+    let doc = parser.parseFromString(rawHtml, "text/html");
 
     const imgElements = Array.from(doc.querySelectorAll("img"));
     for (let i = 0; i < imgElements.length; i++) {
@@ -249,24 +317,13 @@ class KemonoContentParser {
       const originalSrc = img.getAttribute("src");
       if (!originalSrc) continue;
 
-      let absoluteSrc = originalSrc;
-      if (originalSrc.startsWith("//")) {
-        absoluteSrc = `https:${originalSrc}`;
-      } else if (originalSrc.startsWith("/")) {
-        absoluteSrc = `${KEMONO_SITE_BASE_URL}${originalSrc}`;
-      }
-
+      let absoluteSrc = this._normalizeUrl(originalSrc);
       try {
-        this.reportProgress(
-          `Fetching content image: ${originalSrc.substring(0, 30)}…`
-        );
+        this.reportProgress(`Fetching inline image: ${originalSrc.substring(0, 30)}…`);
         let blob = await HttpClient.fetchBlob(absoluteSrc);
-        // Convert everything to PNG
         blob = await convertToPng(blob);
         const mime = "image/png";
-        const fileNameInEpub = sanitizeFilename(
-          `content_${postData.id}_${i}.png`
-        );
+        const fileNameInEpub = sanitizeFilename(`inline_${postData.id}_${i}.png`);
 
         imagesToPackage.push({
           originalUrl: absoluteSrc,
@@ -278,24 +335,345 @@ class KemonoContentParser {
 
         img.setAttribute("src", `../Images/${fileNameInEpub}`);
       } catch (e) {
-        console.warn(`Failed to fetch content image ${absoluteSrc}:`, e);
+        console.warn(`Failed to fetch inline image ${absoluteSrc}:`, e);
         const alt = img.getAttribute("alt") || "";
-        img.setAttribute(
-          "alt",
-          `${alt} (Image not available: ${originalSrc})`
-        );
+        img.setAttribute("alt", `${alt} (Image not available)`);
       }
     }
 
+    if (postData.attachments && Array.isArray(postData.attachments)) {
+      for (let j = 0; j < postData.attachments.length; j++) {
+        const att = postData.attachments[j];
+        if (!att.path || !att.name) continue;
+
+        const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(att.name);
+        if (!isImage) {
+          console.log(`Skipping non-image attachment: ${att.name}`);
+          continue;
+        }
+
+        let absolutePath = this._normalizeUrl(att.path);
+        try {
+          this.reportProgress(`Fetching attachment image: ${att.name.substring(0, 30)}…`);
+          let blob = await HttpClient.fetchBlob(absolutePath);
+          blob = await convertToPng(blob);
+          const mime = "image/png";
+          const fileNameInEpub = sanitizeFilename(att.name.replace(/\.[^/.]+$/, ".png"));
+
+          attachmentsToPackage.push({
+            originalUrl: absolutePath,
+            fileNameInEpub,
+            localPathInEpub: `Images/${fileNameInEpub}`,
+            blob,
+            mimeType: mime,
+            originalName: att.name
+          });
+        } catch (e) {
+          console.warn(`Failed to fetch attachment ${att.path}:`, e);
+        }
+      }
+    }
+
+    const allImagesToPackage = [...imagesToPackage, ...attachmentsToPackage];
+
+    doc = this._rewriteAllImageReferences(doc, allImagesToPackage);
+
     const contentOut = doc.body.innerHTML;
     const xhtmlSafe = sanitizeHtmlContent(contentOut);
-    return { updatedHtml: xhtmlSafe, imagesToPackage };
+
+    return { updatedHtml: xhtmlSafe, imagesToPackage: allImagesToPackage };
+  }
+
+  _normalizeUrl(originalSrc) {
+    let absoluteSrc = originalSrc;
+    if (originalSrc.startsWith("//")) {
+      absoluteSrc = `https:${originalSrc}`;
+    } else if (originalSrc.startsWith("/")) {
+      if (originalSrc.startsWith("/data/")) {
+        absoluteSrc = `${KEMONO_DATA_BASE_URL}${originalSrc}`;
+      } else {
+        absoluteSrc = `${KEMONO_SITE_BASE_URL}${originalSrc}`;
+      }
+    } else if (!originalSrc.startsWith("http")) {
+      absoluteSrc = `${KEMONO_SITE_BASE_URL}/${originalSrc}`;
+    }
+    if (absoluteSrc.includes("#") || absoluteSrc.includes("?")) {
+      const cleanSrc = new URL(absoluteSrc, KEMONO_SITE_BASE_URL).origin + new URL(absoluteSrc, KEMONO_SITE_BASE_URL).pathname;
+      absoluteSrc = cleanSrc;
+    }
+    return absoluteSrc;
+  }
+
+  _rewriteAllImageReferences(doc, imagesToPackage) {
+    const urlToLocalMap = new Map();
+    imagesToPackage.forEach(imgInfo => {
+      urlToLocalMap.set(imgInfo.originalUrl, imgInfo.localPathInEpub);
+      const partialPath = imgInfo.originalUrl.replace(KEMONO_SITE_BASE_URL, "").replace(KEMONO_DATA_BASE_URL.replace("https://", ""), "");
+      if (partialPath) urlToLocalMap.set(partialPath, imgInfo.localPathInEpub);
+    });
+
+    const allImgElements = doc.querySelectorAll("img");
+    allImgElements.forEach(img => {
+      const src = img.getAttribute("src");
+      if (src && urlToLocalMap.has(src)) {
+        img.setAttribute("src", urlToLocalMap.get(src));
+        if (!img.getAttribute("alt") && imagesToPackage.find(i => i.originalUrl === src)) {
+          img.setAttribute("alt", `Attachment: ${imagesToPackage.find(i => i.originalUrl === src).originalName || "Image"}`);
+        }
+      }
+    });
+
+    const allLinks = doc.querySelectorAll("a[href]");
+    allLinks.forEach(a => {
+      let href = a.getAttribute("href");
+      if (href && urlToLocalMap.has(href)) {
+        const localHref = urlToLocalMap.get(href);
+        a.setAttribute("href", localHref);
+        const imgInfo = imagesToPackage.find(i => i.originalUrl === href);
+        if (imgInfo) {
+          if (a.textContent.trim().toLowerCase().includes("download")) {
+            a.textContent = a.textContent.replace(/Download/i, "View");
+          } else if (!a.textContent.trim()) {
+            a.textContent = `View ${imgInfo.originalName}`;
+          }
+        }
+      }
+    });
+
+    const allElementsWithStyle = doc.querySelectorAll("[style*='url(']");
+    allElementsWithStyle.forEach(el => {
+      let style = el.getAttribute("style");
+      const urlMatch = style.match(/url\(['"]?([^'")]+)['"]?\)/gi);
+      if (urlMatch) {
+        urlMatch.forEach(match => {
+          const urlStart = match.indexOf('(') + 1;
+          const urlEnd = match.lastIndexOf(')');
+          const cssUrl = match.substring(urlStart, urlEnd).replace(/^['"]|['"]$/g, '');
+          if (urlToLocalMap.has(cssUrl)) {
+            const localUrl = urlToLocalMap.get(cssUrl);
+            const escapedCssUrl = cssUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            style = style.replace(new RegExp(escapedCssUrl, 'g'), localUrl);
+          }
+        });
+        el.setAttribute("style", style);
+      }
+    });
+
+    return doc;
   }
 }
 
 /* ------------------------------------------------------------------
-// EPUB PACKER – builds the ZIP structure, OPF, NCX, etc.
+// fetchPostListPage – Supports q/tag for full content in response,
+// but always returns stubs (id, title, published, originalOffset) for UI.
+// Full content is only cached during bulk/individual fetches.
 // ------------------------------------------------------------------- */
+export async function fetchPostListPage(
+  service,
+  creatorId,
+  offset,
+  limit = POSTS_PER_PAGE_FOR_LIST,
+  { q, tag } = {}
+) {
+  let url = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/posts?o=${offset}`;
+  if (limit) url += `&limit=${limit}`;
+  if (tag) url += `&tag=${encodeURIComponent(tag)}`;
+  if (q && q.length >= 3) url += `&q=${encodeURIComponent(q)}`;
+
+  try {
+    const data = await HttpClient.fetchJson(url);
+    if (!Array.isArray(data)) throw new Error("Invalid response format.");
+
+    const posts = data.map((p) => ({
+      id: String(p.id),
+      title: p.title || `Untitled Post ${p.id}`,
+      published: p.published,
+      originalOffset: offset
+    }));
+    return { posts };
+  } catch (error) {
+    console.error(`fetchPostListPage error (${service}/${creatorId}, offset ${offset}):`, error);
+    throw error;
+  }
+}
+
+export async function fetchCreatorProfile(service, creatorId) {
+  const profileUrl = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/profile`;
+  let postCount = 0;
+  let creatorName = "";
+
+  try {
+    const profileData = await HttpClient.fetchJson(profileUrl);
+    postCount = profileData.post_count || 0;
+    creatorName = profileData.name || "";
+    console.log(`Profile fetch: count=${postCount}, name="${creatorName}"`);
+  } catch (error) {
+    console.error(`Profile fetch failed for ${service}/${creatorId}:`, error);
+    return { postCount: 0, creatorName: "" };
+  }
+
+  // Use large offset trick for reliable count (ignores sometimes stale profile count)
+  const largeOffsetUrl = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/posts?o=${LARGE_OFFSET_FOR_COUNT}`;
+  try {
+    await ensureApiRateLimit();
+    const response = await fetch(largeOffsetUrl, { headers: { Accept: "text/css" } });
+    const text = await response.text();
+    console.log(`Large offset response (${response.status}):`, text.substring(0, 100));
+
+    if (response.status === 400) {
+      // Expected error with total count in message
+      try {
+        const errorData = JSON.parse(text);
+        const errorMsg = errorData.error || "";
+        const parts = errorMsg.split(/\s+/);
+        const lastPart = parts[parts.length - 1];
+        const candidate = lastPart.replace(/\.$/, "");
+        const parsedCount = parseInt(candidate, 10);
+        if (!isNaN(parsedCount) && parsedCount >= 0) {
+          postCount = parsedCount;
+          console.log(`Parsed reliable count from error: ${postCount}`);
+          return { postCount, creatorName };
+        } else {
+          console.warn(`Could not parse count from error: "${errorMsg}"`);
+        }
+      } catch (jsonError) {
+        console.warn(`JSON parse failed for large offset response:`, jsonError);
+      }
+    } else if (response.status === 200) {
+      const data = JSON.parse(text);
+      postCount = Array.isArray(data) ? data.length : 0;
+      console.log(`Unexpected 200 for large offset; using len=${postCount}`);
+    } else {
+      console.warn(`Unexpected status ${response.status} for large offset; using profile count=${postCount}`);
+    }
+  } catch (fetchError) {
+    console.error(`Large offset fetch failed:`, fetchError);
+    console.log(`Falling back to profile count: ${postCount}`);
+  }
+
+  return { postCount, creatorName };
+}
+
+// Generate an EPUB from the selected posts and trigger a download.
+export async function generateKemonoEpub(
+  creatorInfo,
+  selectedPostStubs,
+  options,
+  progressCallback
+) {
+  if (typeof JSZip === "undefined")
+    throw new Error("JSZip library not found.");
+  if (typeof saveAs === "undefined")
+    throw new Error("FileSaver.js library not found (saveAs function).");
+
+  const parserProgress = (msg) => progressCallback(-1, msg);
+  const parser = new KemonoContentParser(
+    creatorInfo.service,
+    creatorInfo.creatorId,
+    parserProgress
+  );
+
+  const displayName =
+    creatorInfo.creatorName && creatorInfo.creatorName.trim()
+      ? creatorInfo.creatorName.trim()
+      : "Unknown";
+
+  // Generate a proper UUID (v4) – required for dc:identifier.
+  const uuid = (() => {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    const hex = [...Array(16)]
+      .map(() => Math.floor(Math.random() * 256))
+      .map((b) => b.toString(16).padStart(2, "0"));
+    hex[6] = (parseInt(hex[6], 16) & 0x0f | 0x40).toString(16);
+    hex[8] = (parseInt(hex[8], 16) & 0x3f | 0x80).toString(16);
+    return `${hex[0]}${hex[1]}${hex[2]}${hex[3]}-${hex[4]}${hex[5]}-${hex[6]}${hex[7]}-${hex[8]}${hex[9]}-${hex[10]}${hex[11]}${hex[12]}${hex[13]}${hex[14]}${hex[15]}`;
+  })();
+
+  const packer = new EpubPacker({
+    title: displayName,
+    author: displayName,
+    uuid: `urn:uuid:${uuid}`,
+    language: "en"
+  });
+
+  const stylesheet = `body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6;margin:1.5em;color:#333;background:#fff;}
+h1,h2{margin-top:1.5em;margin-bottom:.5em}
+h1{font-size:1.8em}
+h2{font-size:1.5em}
+p{margin-bottom:1em}
+img{max-width:100%;height:auto;display:block;margin:1em auto;border-radius:4px}
+.epub-cover-image-container{text-align:center;page-break-after:always}
+.epub-cover-image-container img{max-height:95vh;width:auto}`;
+  packer.addStylesheet(stylesheet);
+
+  if (options.coverImageUrl) {
+    try {
+      const rawBlob = await HttpClient.fetchBlob(options.coverImageUrl);
+      await packer.addCoverImage(rawBlob, "cover.png", rawBlob.type);
+      progressCallback(5, "Cover image processed.");
+    } catch (e) {
+      console.warn("Cover image error:", e);
+      progressCallback(0, "Cover image skipped (error).");
+    }
+  }
+
+  if (selectedPostStubs.length > 0) {
+    progressCallback(
+      10,
+      `Preparing for bulk fetch (${selectedPostStubs.length} posts) with filters...`
+    );
+    try {
+      await parser.prepareForBulkFetch(selectedPostStubs, {
+        customQ: options.customQ,
+        tagFilter: options.tagFilter
+      });
+      progressCallback(15, "Bulk fetch preparation complete.");
+    } catch (error) {
+      console.error("Error during bulk fetch preparation phase:", error);
+      progressCallback(
+        10,
+        `Bulk fetch prep failed (individual fetches will be used): ${error.message.substring(0, 50)}`
+      );
+    }
+  }
+
+  const numPosts = selectedPostStubs.length;
+  for (let i = 0; i < numPosts; i++) {
+    const stub = selectedPostStubs[i];
+    const postProgress = 15 + ((i / numPosts) * 75);
+    progressCallback(
+      postProgress,
+      `Processing post ${i + 1}/${numPosts}: ${stub.title.substring(0, 30)}…`
+    );
+
+    const post = await parser.fetchPostFullData(stub.id);
+    if (!post) {
+      console.warn(`Skipping post ${stub.id}: No data available.`);
+      continue;
+    }
+
+    const { updatedHtml, imagesToPackage } =
+      await parser.processPostImagesAndContent(post);
+
+    for (const imgInfo of imagesToPackage) {
+      await packer.addImageToManifest(imgInfo);
+    }
+
+    packer.addChapter(post.title || "Untitled Post", updatedHtml);
+  }
+
+  progressCallback(90, "Building EPUB structure...");
+  const epubBlob = await packer.packToBlob();
+  progressCallback(100, "EPUB generated – download started!");
+  const fileName = sanitizeFilename(
+    options.fileName || `${displayName}.epub`
+  );
+  saveAs(epubBlob, fileName);
+}
+
+// EPUB PACKER – builds the ZIP structure, OPF, NCX, etc.
 class EpubPacker {
   constructor(metadata) {
     if (typeof JSZip === "undefined") {
@@ -304,9 +682,6 @@ class EpubPacker {
       );
     }
 
-    // -------------------------------------------------------------
-    // MIMETYPE – first entry, stored (no compression)
-    // -------------------------------------------------------------
     this.zip = new JSZip();
     this.zip.file("mimetype", "application/epub+zip", {
       compression: "STORE"
@@ -324,7 +699,7 @@ class EpubPacker {
 
     this.manifestItems = [];
     this.spineOrder = [];
-    this.tocEntries = []; // { rawTitle, href }
+    this.tocEntries = [];
     this.fileCounter = 0;
   }
 
@@ -340,9 +715,6 @@ class EpubPacker {
     this.zip.folder("META-INF").file("container.xml", xml);
   }
 
-  // -----------------------------------------------------------------
-  // Stylesheet
-  // -----------------------------------------------------------------
   addStylesheet(content, fileName = "stylesheet.css") {
     this.stylesFolder.file(fileName, content);
     this.manifestItems.push({
@@ -352,11 +724,7 @@ class EpubPacker {
     });
   }
 
-  // -----------------------------------------------------------------
-  // Cover handling – async, converts everything to PNG.
-  // -----------------------------------------------------------------
   async addCoverImage(imageBlob, fileNameInEpub, mimeType) {
-    // Convert to PNG (covers may be WebP, JPEG, etc.)
     const pngBlob = await convertToPng(imageBlob);
     const pngName = fileNameInEpub.replace(/\.[^.]+$/, ".png");
 
@@ -371,7 +739,6 @@ class EpubPacker {
     });
     this.metadata.coverImageId = imageId;
 
-    // No DOCTYPE – only XML declaration.
     const coverXhtml = `<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:epub="http://www.idpf.org/2007/ops"
@@ -398,9 +765,6 @@ class EpubPacker {
     this.spineOrder.unshift("cover-xhtml");
   }
 
-  // -----------------------------------------------------------------
-  // Chapter handling – no DOCTYPE, unique manifest IDs.
-  // -----------------------------------------------------------------
   addChapter(title, htmlContent) {
     this.fileCounter++;
     const baseStrict = sanitizeBasenameForXhtmlStrict(
@@ -428,7 +792,6 @@ class EpubPacker {
 </html>`;
     this.textFolder.file(fileName, chapterXhtml);
 
-    // ---- ensure a unique manifest id ----
     const baseId = baseStrict
       .toLowerCase()
       .replace(/[^a-z0-9._-]/g, "_");
@@ -450,9 +813,6 @@ class EpubPacker {
     });
   }
 
-  // -----------------------------------------------------------------
-  // Image handling – adds image to manifest
-  // -----------------------------------------------------------------
   async addImageToManifest(imageInfo) {
     const { blob, fileNameInEpub } = imageInfo;
     const imageId = `img-${fileNameInEpub.split(".").shift()}`;
@@ -464,9 +824,6 @@ class EpubPacker {
     });
   }
 
-  // -----------------------------------------------------------------
-  // OPF (package document)
-  // -----------------------------------------------------------------
   buildContentOpf() {
     const dc = "http://purl.org/dc/elements/1.1/";
     const opfNs = "http://www.idpf.org/2007/opf";
@@ -512,7 +869,6 @@ class EpubPacker {
 </package>`;
   }
 
-  // NCX (legacy navigation)
   buildTocNcx() {
     const navPoints = this.tocEntries
       .map(
@@ -541,10 +897,9 @@ class EpubPacker {
 </ns:ncx>`.trimStart();
   }
 
-  // -----------------------------------------------------------------
-  // Navigation document for EPUB (toc.xhtml) – no DOCTYPE.
-  // -----------------------------------------------------------------
   buildTocXhtml() {
+    if (this.tocEntries.length <= 1) return "";
+
     const listItems = this.tocEntries
       .map(
         (e) => `<li><a href="${e.href}">${escapeXml(e.rawTitle)}</a></li>`
@@ -571,17 +926,19 @@ class EpubPacker {
 </html>`;
   }
 
-  // -----------------------------------------------------------------
-  // Final packaging – returns a Blob (application/epub+zip)
-  // -----------------------------------------------------------------
   async packToBlob() {
     this.addContainerXml();
     this.oebps.file("content.opf", this.buildContentOpf());
     this.oebps.file("toc.ncx", this.buildTocNcx());
-    if (this.metadata.epubVersion === "3.0") {
+    if (this.metadata.epubVersion === "3.0" && this.tocEntries.length > 1) {
       this.oebps.file("toc.xhtml", this.buildTocXhtml());
+      this.manifestItems.push({
+        id: "nav",
+        href: "toc.xhtml",
+        mediaType: "application/xhtml+xml",
+        properties: "nav"
+      });
     }
-    // All content files have already been added to the zip.
     return this.zip.generateAsync({
       type: "blob",
       mimeType: "application/epub+zip",
@@ -589,138 +946,4 @@ class EpubPacker {
       compressionOptions: { level: 6 }
     });
   }
-  packContentFiles(/* zipWriter, epubItemSupplier */) {
-  }
-}
-
-/* ------------------------------------------------------------------
-// API EXPORTS – fetch creator profile, post list, generate EPUB
-// ------------------------------------------------------------------- */
-export async function fetchCreatorProfile(service, creatorId) {
-  const url = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/profile`;
-  const data = await HttpClient.fetchJson(url);
-  return {
-    postCount: data.post_count || 0,
-    creatorName: data.name || ""
-  };
-}
-
-export async function fetchPostListPage(
-  service,
-  creatorId,
-  offset,
-  limit = POSTS_PER_PAGE_FOR_LIST
-) {
-  const url = `${KEMONO_API_BASE_URL}/${service}/user/${creatorId}/posts?o=${offset}`;
-  const data = await HttpClient.fetchJson(url);
-  const posts = data.map((p) => ({
-    id: String(p.id),
-    title: p.title || `Untitled Post ${p.id}`,
-    published: p.published,
-    originalOffset: offset
-  }));
-  return { posts };
-}
-
-/**
- * Generate an EPUB from the selected posts and trigger a download.
- */
-export async function generateKemonoEpub(
-  creatorInfo,
-  selectedPostStubs,
-  options,
-  progressCallback
-) {
-  if (typeof JSZip === "undefined")
-    throw new Error("JSZip library not found.");
-  if (typeof saveAs === "undefined")
-    throw new Error("FileSaver.js library not found (saveAs function).");
-
-  const parserProgress = (msg) => progressCallback(-1, msg);
-  const parser = new KemonoContentParser(
-    creatorInfo.service,
-    creatorInfo.creatorId,
-    parserProgress
-  );
-
-  const displayName =
-    creatorInfo.creatorName && creatorInfo.creatorName.trim()
-      ? creatorInfo.creatorName.trim()
-      : "Unknown";
-
-  // -----------------------------------------------------------------
-  // Generate a proper UUID (v4) – required for dc:identifier.
-  // -----------------------------------------------------------------
-  const uuid = (() => {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID();
-    }
-    const hex = [...Array(16)]
-      .map(() => Math.floor(Math.random() * 256))
-      .map((b) => b.toString(16).padStart(2, "0"));
-    hex[6] = (parseInt(hex[6], 16) & 0x0f | 0x40).toString(16);
-    hex[8] = (parseInt(hex[8], 16) & 0x3f | 0x80).toString(16);
-    return `${hex[0]}${hex[1]}${hex[2]}${hex[3]}-${hex[4]}${hex[5]}-${hex[6]}${hex[7]}-${hex[8]}${hex[9]}-${hex[10]}${hex[11]}${hex[12]}${hex[13]}${hex[14]}${hex[15]}`;
-  })();
-
-  const packer = new EpubPacker({
-    title: displayName,
-    author: displayName,
-    uuid: `urn:uuid:${uuid}`,
-    language: "en"
-  });
-
-  // -----------------------------------------------------------------
-  // Basic stylesheet (can be overridden later)
-  // -----------------------------------------------------------------
-  const stylesheet = `body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6;margin:1.5em;color:#333;background:#fff;}
-h1,h2{margin-top:1.5em;margin-bottom:.5em}
-h1{font-size:1.8em}
-h2{font-size:1.5em}
-p{margin-bottom:1em}
-img{max-width:100%;height:auto;display:block;margin:1em auto;border-radius:4px}
-.epub-cover-image-container{text-align:center;page-break-after:always}
-.epub-cover-image-container img{max-height:95vh;width:auto}`;
-  packer.addStylesheet(stylesheet);
-
-  // -----------------------------------------------------------------
-  // Optional cover image – convert everything to PNG.
-  // -----------------------------------------------------------------
-  if (options.coverImageUrl) {
-    try {
-      const rawBlob = await HttpClient.fetchBlob(options.coverImageUrl);
-      await packer.addCoverImage(rawBlob, "cover.png", rawBlob.type);
-    } catch (e) {
-      console.warn("Cover image error:", e);
-    }
-  }
-
-  // -----------------------------------------------------------------
-  // Process each selected post
-  // -----------------------------------------------------------------
-  for (let i = 0; i < selectedPostStubs.length; i++) {
-    const stub = selectedPostStubs[i];
-    progressCallback(
-      Math.round((i / selectedPostStubs.length) * 100),
-      `Processing ${stub.title.substring(0, 30)}…`
-    );
-
-    const post = await parser.fetchPostFullData(stub.id);
-    const { updatedHtml, imagesToPackage } =
-      await parser.processPostImagesAndContent(post);
-
-    // Inline images belonging to this post
-    for (const imgInfo of imagesToPackage) {
-      await packer.addImageToManifest(imgInfo);
-    }
-
-    // Chapter itself
-    packer.addChapter(post.title || "Untitled Post", updatedHtml);
-  }
-
-  const epubBlob = await packer.packToBlob();
-  const fileName = sanitizeFilename(
-    options.fileName || `${displayName}.epub`
-  );
-  saveAs(epubBlob, fileName);
 }
