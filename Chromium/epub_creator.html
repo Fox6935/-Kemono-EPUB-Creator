@@ -57,6 +57,11 @@
             </select>
           </div>
           <div class="form-group">
+            <label>
+              Include Cover Image <input type="checkbox" id="enableCoverToggle" checked>
+            </label>
+          </div>
+          <div id="coverImageGroup" class="form-group">
             <label for="coverImageUrlInput">Cover Image URL (Optional):</label>
             <input
               id="coverImageUrlInput"
@@ -70,6 +75,16 @@
               class="cover-preview-epub"
               style="display: none;"
             />
+          </div>
+          
+        </div>
+
+        <div class="post-filter-section">
+          <div class="form-group">
+            <select id="tagSelect">
+            </select>
+            <input id="customSearchInput" type="text" placeholder="Enter 3+ chars for custom search" style="display: none;" />
+            <button id="applyFilterBtn" class="button-secondary">Apply Filter</button>
           </div>
         </div>
 
