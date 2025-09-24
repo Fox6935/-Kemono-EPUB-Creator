@@ -1,98 +1,253 @@
 /* index.css */
 
-/* Basic Reset & Defaults */
+/* ==========================================================================
+   ROOT VARIABLES (Dark Theme)
+   ========================================================================== */
+:root {
+  /* Colors */
+  --bg: #1a1a1a;
+  --bg-offset: #2c2c2c;
+  --text: #e0e0e0;
+  --text-sec: #bbb;
+  --text-mute: #aaa;
+  --border: #444;
+  --border-light: #383838;
+  --input-bg: #3a3a3a;
+  --input-text: #e0e0e0;
+  --input-border: #555;
+
+  /* Unified Button (Primary Style) */
+  --btn-bg: #0056b3;
+  --btn-text: #fff;
+  --btn-border: #0056b3;
+  --btn-disabled: #333;
+
+  /* Messages */
+  --msg-info-bg: #21354a;
+  --msg-info-text: #89cff0;
+  --msg-info-border: #3f6e8c;
+  --msg-error-bg: #4a2121;
+  --msg-error-text: #ff8080;
+  --msg-error-border: #8c3f3f;
+
+  /* Spacing & Sizes */
+  --space-xs: 5px;
+  --space-sm: 10px;
+  --space-md: 15px;
+  --space-lg: 20px;
+  --space-xl: 25px;
+  --radius-sm: 4px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+  --shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --trans: 0.2s ease;
+}
+
+/* ==========================================================================
+   BASE & RESET
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.6;
-  /* Directly apply dark theme background and text colors to body */
-  background-color: var(--background-color, #1a1a1a); /* Default dark background */
-  color: var(--text-color, #e0e0e0); /* Default dark text color */
+  background-color: var(--bg);
+  color: var(--text);
 }
 
-/* Color Variables (now always dark theme) */
-:root {
-  --background-color: #1a1a1a;
-  --text-color: #e0e0e0;
-  --text-color-muted: #aaa;
-  --border-color: #444;
-  --border-color-light: #383838;
-
-  /* Custom variables from your provided CSS, now exclusively dark */
-  --background-color-offset: #2c2c2c;
-  --text-color-secondary: #bbb;
-  --input-bg-color: #3a3a3a;
-  --input-text-color: #e0e0e0;
-  --button-secondary-bg-color: #454d55;
-  --button-secondary-text-color: #e9ecef;
-  --button-secondary-border-color: #6c757d;
-  --button-primary-bg-color: #0056b3; /* Darker primary for dark theme */
-  --button-primary-text-color: #fff;
-  --button-primary-border-color: #0056b3;
+h2, h3 {
+  margin: 0 0 var(--space-sm);
+  font-weight: bold;
 }
 
-/* General button styles (adjust if you have a base button class) */
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 button {
-    padding: 10px 15px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 16px;
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  /* Unified primary style for all buttons */
+  background-color: var(--btn-bg);
+  color: var(--btn-text);
+  border: 1px solid var(--btn-border);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 16px;
+  font-family: inherit;
+  transition: opacity var(--trans), filter var(--trans);
 }
+
 button:hover:not(:disabled) {
-    opacity: 0.9;
+  opacity: 0.9;
+  filter: brightness(0.9);
 }
+
 button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  background-color: var(--btn-disabled);
+  border-color: var(--border);
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
-/* Primary Button */
-.button-primary {
-  background-color: var(--button-primary-bg-color);
-  color: var(--button-primary-text-color);
-  border: 1px solid var(--button-primary-border-color);
-}
-.button-primary:hover:not(:disabled) {
-  filter: brightness(0.9); /* Slightly darker hover state */
+/* Smaller buttons (control buttons, load buttons, filter button, etc.) */
+.chapter-selection-controls button,
+.load-posts-controls button,
+.post-filter-section button {
+  padding: 8px 12px;
+  font-size: 14px;
 }
 
+/* Larger primary pack button */
+.epub-progress-section button {
+  padding: var(--space-sm) 25px;
+  width: auto;
+}
 
-/* Messages */
+/* ==========================================================================
+   FORMS & INPUTS
+   ========================================================================== */
+.form-group {
+  margin-bottom: var(--space-md);
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  margin-bottom: var(--space-xs);
+  font-weight: 500;
+  color: var(--text-sec);
+}
+
+input[type="text"],
+input[type="url"],
+select {
+  padding: var(--space-sm);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  font-size: 16px;
+  outline: none;
+  transition: border-color var(--trans);
+}
+
+input[type="text"]:focus,
+input[type="url"]:focus,
+select:focus {
+  border-color: var(--btn-bg);
+}
+
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="rgba(224,224,224,0.7)" d="M7 10l5 5 5-5z"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right var(--space-sm) center;
+  background-size: 16px;
+  padding-right: 30px;
+  cursor: pointer;
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  accent-color: var(--btn-bg);
+}
+
+/* Range selector selects */
+.range-selector-row select {
+  font-size: 14px;
+  padding: 6px 8px;
+  max-width: 300px;
+  flex-grow: 1;
+}
+
+/* CoverImageGroup: explicit column layout to ensure label above input on separate rows, preview below */
+#coverImageGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm); /* Add gap for separation between label, input, and preview */
+}
+
+#coverImageGroup > label:first-child {
+  margin-bottom: var(--space-xs);
+}
+
+#coverImageGroup > input {
+  margin-bottom: var(--space-sm); /* Space between input and preview if shown */
+}
+
+/* Post filter: dedicated row layout for tagSelect, customSearchInput, and applyFilterBtn */
+.post-filter-section .form-group {
+  flex-direction: column;  /* Changed from row to column */
+  align-items: center;     /* Center each element horizontally */
+  gap: var(--space-sm);    /* Vertical gaps between elements */
+  width: 100%;
+  margin: 0;
+}
+
+.post-filter-section select,
+.post-filter-section input {
+  min-width: 200px;        /* Keep reasonable width, but now full-width in column */
+  width: 100%;             /* Ensure they take full available width in column */
+  max-width: 400px;        /* Cap to prevent overflow on wide screens */
+  flex: none;              /* No flex-grow in column */
+}
+
+.post-filter-section button {
+  width: auto;             /* Button doesn't need full width */
+  min-width: 120px;        /* Reasonable button size */
+}
+/* Override inline margins to ensure proper row spacing */
+#customSearchInput,
+#applyFilterBtn {
+  margin-left: 0 !important; /* Override inline margin-left */
+}
+
+/* ==========================================================================
+   MESSAGES
+   ========================================================================== */
 .message-text {
-  padding: 10px;
-  border-radius: 5px;
-  margin-bottom: 15px;
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
   width: 100%;
   text-align: center;
-  /* Directly apply dark theme styles */
+  border: 1px solid;
 }
 
 .info-message {
-  background-color: #21354a; /* Dark theme info bg */
-  color: #89cff0; /* Dark theme info text */
-  border: 1px solid #3f6e8c; /* Dark theme info border */
+  background-color: var(--msg-info-bg);
+  color: var(--msg-info-text);
+  border-color: var(--msg-info-border);
 }
-
 
 .error-message {
-  background-color: #4a2121; /* Dark theme error bg */
-  color: #ff8080; /* Dark theme error text */
-  border: 1px solid #8c3f3f; /* Dark theme error border */
+  background-color: var(--msg-error-bg);
+  color: var(--msg-error-text);
+  border-color: var(--msg-error-border);
 }
 
-
-/* EpubCreatorScreen */
-
+/* ==========================================================================
+   LAYOUT & SECTIONS
+   ========================================================================== */
 .epub-creator-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px;
-  gap: 25px;
+  padding: var(--space-lg);
+  gap: var(--space-xl);
   max-width: 900px;
   margin: 0 auto;
 }
@@ -101,263 +256,214 @@ button:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 25px;
+  gap: var(--space-xl);
   width: 100%;
 }
 
-
 .epub-creator-title {
   font-size: 24px;
-  font-weight: bold;
-  color: var(--text-color, #e0e0e0); /* Directly use dark text color */
-  margin-bottom: 10px;
+  color: var(--text);
   text-align: center;
+  margin-bottom: var(--space-sm);
 }
 
+.chapter-selection-section h3 {
+  font-size: 18px;
+  color: var(--text);
+  text-align: center; /* Center the header */
+}
+
+/* Common section styles */
 .epub-options-section,
 .epub-progress-section,
+.post-filter-section,
 .chapter-selection-section {
   width: 80%;
   max-width: 700px;
-  padding: 20px;
-  background-color: var(--background-color-offset, #2c2c2c); /* Directly use dark offset background */
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); /* Dark shadow */
+  padding: var(--space-lg);
+  background-color: var(--bg-offset);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
 }
 
-.form-group {
-  margin-bottom: 15px;
-  display: flex;
-  flex-direction: column;
-}
-.form-group label {
-  margin-bottom: 5px;
-  font-weight: 500;
-  color: var(--text-color-secondary, #bbb); /* Directly use dark secondary text */
-}
-.form-group input[type="text"],
-.form-group input[type="url"],
-/* NEW: Add select to this rule */
-.form-group select {
-  padding: 10px;
-  border: 1px solid var(--border-color, #555); /* Directly use dark border */
-  border-radius: 4px;
-  font-size: 16px;
-  background-color: var(--input-bg-color, #3a3a3a); /* Directly use dark input background */
-  color: var(--input-text-color, #e0e0e0); /* Directly use dark input text */
-  /* Ensure select dropdown arrow is visible and styled for dark themes */
-  -webkit-appearance: none; /* Remove default arrow on WebKit browsers */
-  -moz-appearance: none;    /* Remove default arrow on Firefox */
-  appearance: none;         /* Remove default arrow */
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="rgba(224,224,224,0.7)" d="M7 10l5 5 5-5z"/></svg>');
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 16px; /* Adjust size of the SVG arrow */
-  padding-right: 30px; /* Make space for the arrow */
-}
-
-
+/* Cover preview */
 .cover-preview-epub {
   max-width: 100px;
   max-height: 150px;
-  margin-top: 10px;
-  border: 1px solid var(--border-color, #444); /* Adjust border for dark mode */
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   object-fit: cover;
+  display: none;
 }
 
+/* Progress section */
 .epub-progress-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
 }
-.epub-progress-section .button-primary {
-  width: auto;
-  padding: 10px 25px;
-}
-.epub-progress-section progress {
+
+#progressBar {
   width: 100%;
   height: 20px;
-  /* Add styling for progress bar in dark mode if default isn't good */
+  display: none;
 }
-.epub-progress-section .progress-message {
+
+.progress-message {
   font-size: 14px;
-  color: var(--text-color-muted, #aaa); /* Directly use dark muted text */
+  color: var(--text-mute);
+  display: none;
 }
 
-
-.chapter-selection-section h3 {
-  font-size: 18px;
-  margin-bottom: 15px;
-  color: var(--text-color, #e0e0e0); /* Directly use dark text */
-}
-
+/* Chapter selection controls: centered buttons */
 .chapter-selection-controls {
   display: flex;
-  gap: 10px;
-  margin-bottom: 15px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
   flex-wrap: wrap;
-}
-.chapter-selection-controls button {
-  padding: 8px 12px;
-  font-size: 14px;
-  background-color: var(--button-secondary-bg-color, #454d55); /* Directly use dark secondary button */
-  color: var(--button-secondary-text-color, #e9ecef);
-  border: 1px solid var(--button-secondary-border-color, #6c757d);
-  border-radius: 4px;
-  cursor: pointer;
-}
-.chapter-selection-controls button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.chapter-selection-controls .range-selector {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.chapter-selection-controls .range-selector label {
-    font-size: 14px;
-    color: var(--text-color-secondary, #bbb); /* Directly use dark secondary text */
+  justify-content: center; /* Center the buttons */
 }
 
-
-.chapter-list-epub {
-  list-style: none;
-  padding: 0;
-  max-height: 400px;
-  overflow-y: auto;
-  border: 1px solid var(--border-color, #444); /* Directly use dark border */
-  border-radius: 4px;
-}
-
-.chapter-list-epub li {
-  padding: 10px 15px;
-  border-bottom: 1px solid var(--border-color-light, #383838); /* Directly use dark light border */
-}
-.chapter-list-epub li:last-child {
-  border-bottom: none;
-}
-.chapter-list-epub li label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  font-size: 15px;
-  color: var(--text-color, #e0e0e0); /* Directly use dark text */
-}
-.chapter-list-epub li input[type="checkbox"] {
-  margin-right: 8px;
-  width: 18px;
-  height: 18px;
-  /* Add custom checkbox styling for dark theme if needed for visibility */
-}
-.post-date-epub {
-    font-size: 0.85em;
-    color: var(--text-color-muted, #999); /* Directly use dark muted text */
-    margin-left: auto;
-}
-
+/* Range selector: centered container */
 .range-selector-container {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 15px;
-  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  align-items: center; /* Center the range rows horizontally */
+  width: 100%;
 }
 
 .range-selector-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   width: 100%;
+  justify-content: center; /* Center label and select within each row */
 }
 
 .range-selector-row label {
   font-size: 14px;
-  color: var(--text-color-secondary, #bbb); /* Directly use dark secondary text */
+  color: var(--text-sec);
   min-width: 40px;
+  white-space: nowrap;
 }
 
-.range-selector-row select {
-  padding: 6px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color, #555); /* Directly use dark border */
-  background-color: var(--input-bg-color, #3a3a3a); /* Directly use dark input background */
-  color: var(--input-text-color, #e0e0e0); /* Directly use dark input text */
-  font-size: 14px;
-  flex-grow: 1;
-  max-width: 300px;
-  overflow: hidden;
-
-  /* Re-added styling for dropdown arrow consistency */
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="rgba(224,224,224,0.7)" d="M7 10l5 5 5-5z"/></svg>');
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 16px;
-  padding-right: 30px;
+/* Chapter list */
+.chapter-list-epub {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-md);
 }
 
+.chapter-list-epub li {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+}
+
+.chapter-list-epub li:last-child {
+  border-bottom: none;
+}
+
+.chapter-list-epub label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--text);
+  flex: 1;
+  margin: 0;
+}
+
+.post-date-epub {
+  font-size: 0.85em;
+  color: var(--text-mute);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Load controls: centered */
 .load-posts-controls {
-    margin-top: 20px;
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-}
-.load-posts-controls button {
-    padding: 8px 15px;
-    font-size: 14px;
-    background-color: var(--button-secondary-bg-color, #454d55); /* Directly use dark secondary button */
-    color: var(--button-secondary-text-color, #e9ecef);
-    border: 1px solid var(--button-secondary-border-color, #6c757d);
-    border-radius: 4px;
-    cursor: pointer;
-}
-.load-posts-controls button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  margin-top: var(--space-lg);
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: center;
+  align-items: center;
+  width: 100%;
 }
 
-/* Styles for initial loading state before full UI is built in epub_creator.js */
-/* This specific class is likely not needed now if main-content-sections-wrapper is toggled */
-/* However, keeping it in case the JS ever targets epub-creator-container directly for loading state */
+/* Loading state */
 .epub-creator-container.loading-state {
-    min-height: 200px;
-    justify-content: center;
-    align-items: center;
-}
-.epub-creator-container.loading-state > :not(.message-text) {
-    display: none;
+  min-height: 200px;
+  justify-content: center;
+  align-items: center;
 }
 
-/* Responsive adjustments */
+.epub-creator-container.loading-state > :not(.message-text) {
+  display: none;
+}
+
+/* Filter note */
+.filter-note {
+  text-align: center;
+  color: var(--text-mute);
+  font-size: 14px;
+  margin-top: var(--space-sm);
+}
+
+/* ==========================================================================
+   RESPONSIVE
+   ========================================================================== */
 @media (max-width: 768px) {
+  .epub-creator-container {
+    padding: var(--space-md);
+    gap: var(--space-lg);
+  }
+
+  #main-content-sections-wrapper {
+    gap: var(--space-lg);
+  }
+
   .epub-options-section,
   .epub-progress-section,
+  .post-filter-section,
   .chapter-selection-section {
     width: 95%;
-    padding: 15px;
+    padding: var(--space-md);
   }
-  .epub-creator-container {
-    padding: 10px;
-  }
-  #main-content-sections-wrapper {
-      gap: 15px;
-  }
-  .chapter-selection-controls {
+
+  .chapter-selection-controls,
+  .post-filter-section .form-group {
     flex-direction: column;
+    align-items: center; /* Center items in column on mobile */
   }
+
+  .range-selector-container {
+    align-items: stretch; /* Full width on mobile for rows */
+  }
+
   .range-selector-row {
     flex-direction: column;
     align-items: flex-start;
+    justify-content: flex-start;
   }
+
   .range-selector-row label {
     min-width: unset;
+  }
+
+  .post-filter-section select,
+  .post-filter-section input {
+    min-width: unset;
+  }
+
+  .load-posts-controls {
+    flex-direction: column;
   }
 }
