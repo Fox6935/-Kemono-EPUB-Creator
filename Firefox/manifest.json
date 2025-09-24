@@ -2,8 +2,8 @@
 {
   "manifest_version": 3,
   "name": "Kemono EPUB Creator",
-  "version": "1.2.2",
-  "description": "Generate EPUBs from Kemono.cr posts in a new tab.",
+  "version": "1.2.3",
+  "description": "Generate EPUBs from Kemono posts in a new tab.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -19,11 +19,34 @@
   "background": {
     "scripts": ["background.js"]
   },
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "tabs"],
   "host_permissions": [
     "https://kemono.cr/*",
     "https://img.kemono.cr/*",
-    "*://*.kemono.cr/*"
-  ]
+    "https://*.kemono.cr/*"
+  ],
+  "action": {
+    "default_title": "Open Kemono EPUB Creator"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "epub_creator.html",
+        "index.css",
+        "kemonoEpubGenerator.js",
+        "filenameGenerator.js",
+        "epub_creator.js",
+        "libs/jszip.min.js",
+        "libs/FileSaver.min.js",
+        "icons/*.png"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "kemono-epub-creator@example.com",
+      "strict_min_version": "109.0"
+    }
+  }
 }
-
