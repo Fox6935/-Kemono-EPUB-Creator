@@ -1,4 +1,4 @@
-// kemonoEpubGenerator.js
+//  EpubGenerator.js
 //  This file creates an EPUB from Kemono posts.
 
 // CONFIGURATION
@@ -1044,3 +1044,4 @@ class EpubPacker {
     });
   }
 }
+
