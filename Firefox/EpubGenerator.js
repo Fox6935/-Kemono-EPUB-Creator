@@ -1,4 +1,4 @@
-// kemonoEpubGenerator.js
+//  EpubGenerator.js
 //  This file creates an EPUB from Kemono posts.
 
 // CONFIGURATION
@@ -564,7 +564,7 @@ export async function generateKemonoEpub(
   if (typeof JSZip === "undefined")
     throw new Error("JSZip library not found.");
   if (typeof saveAs === "undefined")
-    throw new Error("FileSaver.js library not found (saveAs function).");
+    throw new Error("FileSaver.js library not found.");
 
   const parserProgress = (msg) => progressCallback(-1, msg);
   const parser = new KemonoContentParser(
@@ -605,7 +605,12 @@ h2{font-size:1.5em}
 p{margin-bottom:1em}
 img{max-width:100%;height:auto;display:block;margin:1em auto;border-radius:4px}
 .epub-cover-image-container{text-align:center;page-break-after:always}
-.epub-cover-image-container img{max-height:95vh;width:auto}`;
+.epub-cover-image-container img{max-height:95vh;width:auto}
+.toc-page { padding: 1em; }
+.toc-list { list-style-type: none; padding-left: 0; }
+.toc-list li { margin-bottom: 0.5em; }
+.toc-list a { text-decoration: none; color: #333; }
+.toc-list a:hover { text-decoration: underline; }`;
   packer.addStylesheet(stylesheet);
 
   if (options.coverImageUrl) {
@@ -640,9 +645,11 @@ img{max-width:100%;height:auto;display:block;margin:1em auto;border-radius:4px}
   }
 
   const numPosts = selectedPostStubs.length;
+  const processedPosts = [];
+  
   for (let i = 0; i < numPosts; i++) {
     const stub = selectedPostStubs[i];
-    const postProgress = 15 + ((i / numPosts) * 75);
+    const postProgress = 15 + ((i / numPosts) * 70);
     progressCallback(
       postProgress,
       `Processing post ${i + 1}/${numPosts}: ${stub.title.substring(0, 30)}…`
@@ -661,7 +668,21 @@ img{max-width:100%;height:auto;display:block;margin:1em auto;border-radius:4px}
       await packer.addImageToManifest(imgInfo);
     }
 
-    packer.addChapter(post.title || "Untitled Post", updatedHtml);
+    // Store processed post info for ToC
+    processedPosts.push({
+      title: post.title || "Untitled Post",
+      id: stub.id
+    });
+
+    // Generate chapter ID and filename based on title
+    const baseStrict = sanitizeBasenameForXhtmlStrict(post.title || `Chapter_${i}`);
+    const chapterId = `ch-${baseStrict}`;
+    packer.addChapter(post.title || "Untitled Post", updatedHtml, chapterId);
+  }
+
+  // Add ToC page at the beginning
+  if (processedPosts.length > 0) {
+    packer.addTableOfContents(processedPosts);
   }
 
   progressCallback(90, "Building EPUB structure...");
@@ -701,6 +722,9 @@ class EpubPacker {
     this.spineOrder = [];
     this.tocEntries = [];
     this.fileCounter = 0;
+    this.imageIdCounter = 0; // Counter for unique image IDs
+    this.usedImageIds = new Set(); // Track used image IDs to avoid duplicates
+    this.usedImagePaths = new Set(); // Track used image paths to avoid duplicates
   }
 
   addContainerXml() {
@@ -725,21 +749,22 @@ class EpubPacker {
   }
 
   async addCoverImage(imageBlob, fileNameInEpub, mimeType) {
-    const pngBlob = await convertToPng(imageBlob);
-    const pngName = fileNameInEpub.replace(/\.[^.]+$/, ".png");
+    try {
+      const pngBlob = await convertToPng(imageBlob);
+      const pngName = fileNameInEpub.replace(/\.[^.]+$/, ".png");
 
-    const imageId = "cover-image";
-    const imagePath = `Images/${pngName}`;
-    this.imagesFolder.file(pngName, pngBlob);
-    this.manifestItems.push({
-      id: imageId,
-      href: imagePath,
-      mediaType: "image/png",
-      properties: "cover-image"
-    });
-    this.metadata.coverImageId = imageId;
+      const imageId = "cover-image";
+      const imagePath = `Images/${pngName}`;
+      this.imagesFolder.file(pngName, pngBlob);
+      this.manifestItems.push({
+        id: imageId,
+        href: imagePath,
+        mediaType: "image/png",
+        properties: "cover-image"
+      });
+      this.metadata.coverImageId = imageId;
 
-    const coverXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+      const coverXhtml = `<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:epub="http://www.idpf.org/2007/ops"
       xml:lang="${this.metadata.language}"
@@ -756,20 +781,114 @@ class EpubPacker {
   </div>
 </body>
 </html>`;
-    this.textFolder.file("cover.xhtml", coverXhtml);
-    this.manifestItems.push({
-      id: "cover-xhtml",
-      href: "Text/cover.xhtml",
-      mediaType: "application/xhtml+xml"
-    });
-    this.spineOrder.unshift("cover-xhtml");
+      this.textFolder.file("cover.xhtml", coverXhtml);
+      this.manifestItems.push({
+        id: "cover-xhtml",
+        href: "Text/cover.xhtml",
+        mediaType: "application/xhtml+xml"
+      });
+      this.spineOrder.unshift("cover-xhtml");
+    } catch (error) {
+      console.error("Error adding cover image:", error);
+      throw error;
+    }
   }
 
-  addChapter(title, htmlContent) {
+  addTableOfContents(posts) {
+    if (!posts || posts.length === 0) return;
+
+    const tocHtml = posts.map((post, index) => {
+      // Find the matching chapter file name
+      const baseStrict = sanitizeBasenameForXhtmlStrict(post.title);
+      const chapterFileName = `${baseStrict}.xhtml`;
+      return `
+          <li>
+            <a href="${chapterFileName}">${escapeXml(post.title)}</a>
+          </li>
+        `;
+    }).join("");
+
+    const tocXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+  <html xmlns="http://www.w3.org/1999/xhtml"
+        xmlns:epub="http://www.idpf.org/2007/ops"
+        xml:lang="${this.metadata.language}"
+        lang="${this.metadata.language}">
+  <head>
+    <title>Table of Contents</title>
+    <link rel="stylesheet" type="text/css" href="../Styles/stylesheet.css"/>
+  </head>
+  <body class="toc-page">
+    <nav epub:type="toc" id="toc">
+      <h1>Table of Contents</h1>
+      <ol class="toc-list">
+        ${tocHtml}
+      </ol>
+    </nav>
+  </body>
+  </html>`;
+
+    this.textFolder.file("toc.xhtml", tocXhtml);
+    this.manifestItems.push({
+      id: "toc",
+      href: "Text/toc.xhtml",
+      mediaType: "application/xhtml+xml",
+      properties: "nav"
+    });
+    
+    // Make sure ToC is in the spine after cover if it exists, otherwise at the beginning
+    if (!this.spineOrder.includes("toc")) {
+      if (this.spineOrder.includes("cover-xhtml")) {
+        const coverIndex = this.spineOrder.indexOf("cover-xhtml");
+        this.spineOrder.splice(coverIndex + 1, 0, "toc");
+      } else {
+        this.spineOrder.unshift("toc");
+      }
+    }
+    
+    // Reorder spine to ensure correct order: cover, toc, chapters in order
+    const chapters = [];
+    const nonChapters = [];
+    
+    this.spineOrder.forEach(id => {
+      if (id.startsWith("ch-")) {
+        chapters.push(id);
+      } else {
+        nonChapters.push(id);
+      }
+    });
+    
+    // Sort chapters by their order in the posts array
+    const sortedChapters = [];
+    posts.forEach((post, index) => {
+      const baseStrict = sanitizeBasenameForXhtmlStrict(post.title);
+      const chapterId = `ch-${baseStrict}`;
+      if (chapters.includes(chapterId)) {
+        sortedChapters.push(chapterId);
+      }
+    });
+    
+    // Rebuild spine in correct order
+    this.spineOrder = [...nonChapters, ...sortedChapters];
+    
+    // Update ToC entries to match the new order
+    this.tocEntries = [];
+    posts.forEach((post, index) => {
+      const baseStrict = sanitizeBasenameForXhtmlStrict(post.title);
+      const chapterFileName = `${baseStrict}.xhtml`;
+      this.tocEntries.push({
+        rawTitle: post.title,
+        href: `Text/${chapterFileName}`
+      });
+    });
+  }
+
+  addChapter(title, htmlContent, chapterId) {
     this.fileCounter++;
+    
     const baseStrict = sanitizeBasenameForXhtmlStrict(
       title || `Chapter_${this.fileCounter}`
     );
+    
     const fileName = `${baseStrict}.xhtml`;
     const pathInEpub = `Text/${fileName}`;
 
@@ -792,36 +911,56 @@ class EpubPacker {
 </html>`;
     this.textFolder.file(fileName, chapterXhtml);
 
-    const baseId = baseStrict
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]/g, "_");
-    let chapterId = `ch-${baseId || this.fileCounter}`;
-    if (this.manifestItems.some((it) => it.id === chapterId)) {
-      chapterId = `ch-${baseId}_${this.fileCounter}`;
-    }
-
     this.manifestItems.push({
       id: chapterId,
       href: pathInEpub,
       mediaType: "application/xhtml+xml"
     });
-    this.spineOrder.push(chapterId);
-
-    this.tocEntries.push({
-      rawTitle: title || "Untitled",
-      href: pathInEpub
-    });
+    
+    // Insert after cover if it exists, otherwise after ToC if it exists, otherwise at the beginning
+    if (this.spineOrder.includes("cover-xhtml")) {
+      const coverIndex = this.spineOrder.indexOf("cover-xhtml");
+      this.spineOrder.splice(coverIndex + 1, 0, chapterId);
+    } else if (this.spineOrder.includes("toc")) {
+      const tocIndex = this.spineOrder.indexOf("toc");
+      this.spineOrder.splice(tocIndex + 1, 0, chapterId);
+    } else {
+      this.spineOrder.push(chapterId);
+    }
   }
 
   async addImageToManifest(imageInfo) {
-    const { blob, fileNameInEpub } = imageInfo;
-    const imageId = `img-${fileNameInEpub.split(".").shift()}`;
-    this.imagesFolder.file(fileNameInEpub, blob);
-    this.manifestItems.push({
-      id: imageId,
-      href: `Images/${fileNameInEpub}`,
-      mediaType: "image/png"
-    });
+    try {
+      const { blob, fileNameInEpub } = imageInfo;
+      
+      // Skip if this image path is already used
+      if (this.usedImagePaths.has(fileNameInEpub)) {
+        console.warn(`Skipping duplicate image: ${fileNameInEpub}`);
+        return;
+      }
+      
+      this.usedImagePaths.add(fileNameInEpub);
+      
+      // Create a unique ID for this image
+      let imageId = `img-${this.imageIdCounter++}`;
+      
+      // Ensure the ID is unique
+      while (this.usedImageIds.has(imageId)) {
+        imageId = `img-${this.imageIdCounter++}`;
+      }
+      
+      this.usedImageIds.add(imageId);
+      
+      this.imagesFolder.file(fileNameInEpub, blob);
+      this.manifestItems.push({
+        id: imageId,
+        href: `Images/${fileNameInEpub}`,
+        mediaType: "image/png"
+      });
+    } catch (error) {
+      console.error("Error adding image to manifest:", error);
+      // Continue processing even if one image fails
+    }
   }
 
   buildContentOpf() {
@@ -858,10 +997,6 @@ class EpubPacker {
   <manifest>
     ${manifestXml}
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-    ${this.metadata.epubVersion === "3.0"
-        ? '<item id="nav" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>'
-        : ""
-    }
   </manifest>
   <spine toc="ncx">
     ${spineXml}
@@ -897,48 +1032,10 @@ class EpubPacker {
 </ns:ncx>`.trimStart();
   }
 
-  buildTocXhtml() {
-    if (this.tocEntries.length <= 1) return "";
-
-    const listItems = this.tocEntries
-      .map(
-        (e) => `<li><a href="${e.href}">${escapeXml(e.rawTitle)}</a></li>`
-      )
-      .join("\n      ");
-
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"
-      xmlns:epub="http://www.idpf.org/2007/ops"
-      xml:lang="${escapeXml(this.metadata.language)}"
-      lang="${escapeXml(this.metadata.language)}">
-<head>
-  <title>Table of Contents</title>
-  <link rel="stylesheet" type="text/css" href="Styles/stylesheet.css"/>
-</head>
-<body>
-  <nav epub:type="toc" id="toc">
-    <h2>Table of Contents</h2>
-    <ol>
-      ${listItems}
-    </ol>
-  </nav>
-</body>
-</html>`;
-  }
-
   async packToBlob() {
     this.addContainerXml();
     this.oebps.file("content.opf", this.buildContentOpf());
     this.oebps.file("toc.ncx", this.buildTocNcx());
-    if (this.metadata.epubVersion === "3.0" && this.tocEntries.length > 1) {
-      this.oebps.file("toc.xhtml", this.buildTocXhtml());
-      this.manifestItems.push({
-        id: "nav",
-        href: "toc.xhtml",
-        mediaType: "application/xhtml+xml",
-        properties: "nav"
-      });
-    }
     return this.zip.generateAsync({
       type: "blob",
       mimeType: "application/epub+zip",
