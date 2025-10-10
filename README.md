@@ -69,12 +69,5 @@ This extension is <s>not available on official browser stores</s> now availible 
 
 ## Disclaimer
 
-This extension is provided as-is, without warranty of any kind. Use at your own risk. It interacts with a third-party website, Kemono.su, and its functionality may be affected by changes to that website's structure or API.
-
-## Issues and Future plans (not implimented yet)
-
-*   Allow for clicking the extension icon to open the epub creator
-*   Add support for tags
-*   Fix post count - currently using `profile` endpoint to get the current total post count, which is usually wrong right after posts are added, and can cause minor buggy behaviour with the count when all posts are loaded.
-    *   Ironically, the best way to get post_count is to send a GET request `/posts?o=100000`and the response is a error code 400: `{"error":"Offset 100000 is bigger than total count 562."}` with 562 in this case being the actual post_count.
+This extension is provided as-is, without warranty of any kind. Use at your own risk. It interacts with a third-party website, Kemono.cr, and its functionality may be affected by changes to that website's structure or API.
 
