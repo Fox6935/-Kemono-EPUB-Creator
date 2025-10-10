@@ -1,7 +1,7 @@
-// epub_creator.js
+// index.js
 // HTML/JS logic for the EPUB creator UI in a new tab.
 
-import { generateKemonoEpub, fetchPostListPage, fetchCreatorProfile, fetchTagsList } from "./kemonoEpubGenerator.js";
+import { generateKemonoEpub, fetchPostListPage, fetchCreatorProfile, fetchTagsList } from "./EpubGenerator.js";
 import {
   sanitizeAndTruncate,
   truncateTitle,
