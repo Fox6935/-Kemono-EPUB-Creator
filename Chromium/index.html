@@ -46,13 +46,19 @@
             <label for="filenamePatternSelect">Filename Pattern:</label>
             <select id="filenamePatternSelect">
               <option value="titles_only">
-                Titles Only (e.g., Chapter_1-Chapter_2)
+                Post Titles Only (Chapter_1-Chapter_2)
               </option>
               <option value="creator_titles">
-                Creator_Titles (e.g., CreatorName_Chapter_1-Chapter_2)
+                Creator_Post Titles (Creator_Chapter_1-Chapter_2)
               </option>
               <option value="creator_numbers">
-                Creator_Numbers (e.g., CreatorName_1-2)
+                Creator_Numbers (Creator_1-25)
+              </option>
+              <option value="creator_second_numbers">
+                Creator_Numbers_2 ("Creator_47" for "B3 Chapter 47")
+              </option>
+              <option value="creator_book_chapter_numbers">
+                Creator_Book and Chapter (Creator_B2C1-B2C4)
               </option>
             </select>
           </div>
@@ -152,8 +158,8 @@
     <script src="libs/jszip.min.js"></script>
     <script src="libs/FileSaver.min.js"></script>
 
-    <script type="module" src="kemonoEpubGenerator.js"></script>
+    <script type="module" src="EpubGenerator.js"></script>
     <script type="module" src="filenameGenerator.js"></script>
-    <script type="module" src="epub_creator.js"></script>
+    <script type="module" src="index.js"></script>
   </body>
 </html>
