@@ -598,19 +598,29 @@ export async function generateKemonoEpub(
     language: "en"
   });
 
-  const stylesheet = `body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6;margin:1.5em;color:#333;background:#fff;}
-h1,h2{margin-top:1.5em;margin-bottom:.5em}
-h1{font-size:1.8em}
-h2{font-size:1.5em}
-p{margin-bottom:1em}
-img{max-width:100%;height:auto;display:block;margin:1em auto;border-radius:4px}
+  // Minimalist stylesheet inspired by Calibre: Neutral, book-like, no explicit fonts/colors for e-reader defaults
+  const stylesheet = `body{font-size:1.29em;line-height:1.2;margin:0 5pt;padding:0}
+.calibre{display:block;font-size:1.29em;line-height:1.2;padding:0;margin:0 5pt;text-indent:0}
+.calibre1{display:block;margin:0.5em 0;padding:0;text-indent:1.5em}
+.calibre2{display:block;margin:0.5em 0;padding:0;text-indent:1.5em}
+h1{font-size:1.8em;margin:0.5em 0;padding:0}
+h2{font-size:1.5em;margin:0.5em 0;padding:0}
+p{display:block;margin:0.5em 0;padding:0;text-indent:1.5em}
+img{max-width:100%;height:auto;display:block;margin:1em auto}
+.calibre3{vertical-align:super;font-size:0.65em;line-height:1.2}
+.none{font-weight:bold;font-size:0.77em;font-style:normal;text-decoration:none}
+.none1{font-style:italic;font-size:0.77em;font-weight:normal;text-decoration:none}
+.none2{font-style:italic;font-size:1.2em;line-height:1.2;text-decoration:none}
+.none3{font-size:0.77em;font-style:normal;font-weight:normal;text-decoration:none}
+.none4{font-size:1.2em;line-height:1.2;text-decoration:none}
+.s{display:block;margin:0.5em 0;padding:0;text-align:center}
+.s1{display:block;margin:0.5em 0;padding:0;text-align:left;text-indent:1.5em}
 .epub-cover-image-container{text-align:center;page-break-after:always}
-.epub-cover-image-container img{max-height:95vh;width:auto}
-.toc-page { padding: 1em; }
-.toc-list { list-style-type: none; padding-left: 0; }
-.toc-list li { margin-bottom: 0.5em; }
-.toc-list a { text-decoration: none; color: #333; }
-.toc-list a:hover { text-decoration: underline; }`;
+.epub-cover-image-container img{max-height:95vh;width:auto;display:block;margin:1em auto}
+.toc-page{padding:1em}
+.toc-list{list-style-type:none;padding-left:0;margin:0}
+.toc-list li{margin:0.5em 0;padding:0}
+.toc-list a{text-decoration:none}`;
   packer.addStylesheet(stylesheet);
 
   if (options.coverImageUrl) {
@@ -1044,3 +1054,4 @@ class EpubPacker {
     });
   }
 }
+
