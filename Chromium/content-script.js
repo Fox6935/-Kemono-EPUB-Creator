@@ -10,7 +10,6 @@ function isKemonoCr() {
 }
 
 function isCreatorPagePath(pathname) {
-  // Allow extra segments (e.g., /posts), exclude single-post pages
   const creatorBase = /^\/[^/]+\/user\/\d+(?:\/.*)?$/;
   const isCreator = creatorBase.test(pathname);
   const isSinglePost = /\/user\/\d+\/post\/\d+/.test(pathname);
@@ -30,8 +29,8 @@ function getCreatorName() {
 
 function injectEpubButton({ service, creatorId }, creatorName) {
   const actionsDiv = document.querySelector(".user-header__actions");
+  
   if (!actionsDiv) return false;
-
   if (document.getElementById("kemono-epub-download-button")) return true;
 
   const btn = document.createElement("button");
@@ -43,12 +42,13 @@ function injectEpubButton({ service, creatorId }, creatorName) {
   btn.title = "Generate an EPUB from this creator's posts";
 
   btn.addEventListener("click", () => {
+    const currentName = getCreatorName() || creatorName || "";
     chrome.runtime.sendMessage(
       {
         action: "openEpubCreatorTab",
         service,
         creatorId,
-        creatorName: creatorName || ""
+        creatorName: currentName
       },
       () => {}
     );
@@ -58,25 +58,52 @@ function injectEpubButton({ service, creatorId }, creatorName) {
   return true;
 }
 
-function waitForActionsAndInject(params, creatorName, timeoutMs = 3000) {
-  const start = performance.now();
-
-  function tryInject() {
-    if (injectEpubButton(params, creatorName)) return;
-    if (performance.now() - start >= timeoutMs) return;
-    requestAnimationFrame(tryInject);
-  }
-
-  tryInject();
-}
-
-(function () {
+function runInjector() {
   if (!isKemonoCr()) return;
-  if (!isCreatorPagePath(window.location.pathname)) return;
+  
+  const pathname = window.location.pathname;
+  if (!isCreatorPagePath(pathname)) return;
 
-  const params = getServiceAndCreatorIdFromPath(window.location.pathname);
+  const params = getServiceAndCreatorIdFromPath(pathname);
   if (!params) return;
 
-  const name = getCreatorName();
-  waitForActionsAndInject(params, name);
-})();
+  if (injectEpubButton(params, getCreatorName())) return;
+
+  const observer = new MutationObserver((mutations, obs) => {
+    if (document.getElementById("kemono-epub-download-button")) {
+      obs.disconnect();
+      return;
+    }
+
+    if (injectEpubButton(params, getCreatorName())) {
+      obs.disconnect();
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  setTimeout(() => observer.disconnect(), 5000);
+}
+
+// --- NAVIGATION HANDLING ---
+
+let lastUrl = window.location.href;
+runInjector();
+
+const navigationObserver = new MutationObserver(() => {
+  const currentUrl = window.location.href;
+  if (currentUrl !== lastUrl) {
+    lastUrl = currentUrl;
+
+    setTimeout(runInjector, 100); 
+  }
+});
+
+navigationObserver.observe(document.body, { 
+  childList: true, 
+  subtree: true 
+});
+
+window.addEventListener('popstate', () => {
+  setTimeout(runInjector, 100);
+});
