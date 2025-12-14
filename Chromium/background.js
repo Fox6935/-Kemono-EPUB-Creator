@@ -45,6 +45,7 @@ chrome.action.onClicked.addListener(async () => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Existing listener for Creator Tab
   if (request.action === 'openEpubCreatorTab') {
     const { service, creatorId, creatorName } = request;
     const encodedService = encodeURIComponent(service);
@@ -54,18 +55,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       `index.html?service=${encodedService}&id=${encodedCreatorId}&name=${encodedCreatorName}`,
     );
 
-    chrome.tabs.create({ url: url }, (newTab) => {
-      if (chrome.runtime.lastError) {
-        console.error(
-          'Error opening new tab:',
-          chrome.runtime.lastError.message,
-        );
-        sendResponse({ success: false, error: chrome.runtime.lastError.message });
-      } else {
-        console.log('New tab opened:', newTab.id);
-        sendResponse({ success: true, tabId: newTab.id });
-      }
-    });
+    chrome.tabs.create({ url: url });
     return true;
   }
 });
+
