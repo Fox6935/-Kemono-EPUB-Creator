@@ -193,7 +193,7 @@ class KemonoContentParser {
       if (!postDetail || !postDetail.id) {
         throw new Error(`Post data for ${postId} is malformed or missing.`);
       }
-      this.postCache.set(postId, postDetail);  // Cache full data
+      this.postCache.set(postId, postDetail); // Cache full data
       return postDetail;
     } catch (error) {
       console.error(`Error fetching post ${postId}:`, error);
@@ -218,34 +218,42 @@ class KemonoContentParser {
       return;
     }
 
-    let bulkParamType = 'q';
-    let bulkValue = customQ || '<p>';
+    let bulkParamType = "q";
+    let bulkValue = customQ || "<p>";
     let bulkTag = tagFilter || "";
 
     if (bulkTag) {
       try {
         const tags = await fetchTagsList(this.service, this.creatorId);
-        const matchingTag = tags.find(t => t.tag === bulkTag && t.post_count >= selectedPostStubs.length);
+        const matchingTag = tags.find(
+          (t) => t.tag === bulkTag && t.post_count >= selectedPostStubs.length
+        );
         if (matchingTag) {
-          bulkParamType = 'tag';
+          bulkParamType = "tag";
           bulkValue = bulkTag;
-          this.reportProgress(`Using tag '${bulkValue}' for bulk fetch (covers ${matchingTag.post_count} posts).`);
+          this.reportProgress(
+            `Using tag '${bulkValue}' for bulk fetch (covers ${matchingTag.post_count} posts).`
+          );
         } else {
-          console.warn(`Tag '${bulkTag}' post_count too low; falling back to q=<p>.`);
-          bulkParamType = 'q';
-          bulkValue = '<p';
+          console.warn(
+            `Tag '${bulkTag}' post_count too low; falling back to q=<p>.`
+          );
+          bulkParamType = "q";
+          bulkValue = "<p";
         }
       } catch (e) {
         console.warn("Tag check failed, using q=<p>:", e);
-        bulkParamType = 'q';
-        bulkValue = '<p';
+        bulkParamType = "q";
+        bulkValue = "<p";
       }
     } else if (customQ && customQ.length < 3) {
       console.warn("Custom q too short; using default q=<p>.");
-      bulkValue = '<p';
+      bulkValue = "<p";
     }
 
-    this.reportProgress(`Bulk fetching with ${bulkParamType}=${bulkValue} to cover ${selectedPostStubs.length} posts...`);
+    this.reportProgress(
+      `Bulk fetching with ${bulkParamType}=${bulkValue} to cover ${selectedPostStubs.length} posts...`
+    );
 
     const offsetsToFetch = new Set();
     for (const stub of selectedPostStubs) {
@@ -257,7 +265,9 @@ class KemonoContentParser {
     }
 
     if (offsetsToFetch.size === 0) {
-      this.reportProgress("No offsets from selected posts; fetching individually.");
+      this.reportProgress(
+        "No offsets from selected posts; fetching individually."
+      );
       return;
     }
 
@@ -267,14 +277,16 @@ class KemonoContentParser {
     for (let i = 0; i < sortedOffsets.length; i++) {
       const offset = sortedOffsets[i];
       let url = `${KEMONO_API_BASE_URL}/${this.service}/user/${this.creatorId}/posts?o=${offset}`;
-      if (bulkParamType === 'tag') {
+      if (bulkParamType === "tag") {
         url += `&tag=${encodeURIComponent(bulkValue)}`;
       } else {
         url += `&q=${encodeURIComponent(bulkValue)}`;
       }
 
       try {
-        this.reportProgress(`Bulk page ${i + 1}/${sortedOffsets.length} (offset ${offset})...`);
+        this.reportProgress(
+          `Bulk page ${i + 1}/${sortedOffsets.length} (offset ${offset})...`
+        );
         const postsOnPage = await HttpClient.fetchJson(url);
         if (Array.isArray(postsOnPage)) {
           let cachedCount = 0;
@@ -284,29 +296,42 @@ class KemonoContentParser {
               cachedCount++;
             }
           }
-          this.reportProgress(`Cached ${cachedCount} full posts from offset ${offset}.`);
+          this.reportProgress(
+            `Cached ${cachedCount} full posts from offset ${offset}.`
+          );
         } else {
-          console.warn(`Unexpected bulk response at offset ${offset}:`, postsOnPage);
+          console.warn(
+            `Unexpected bulk response at offset ${offset}:`,
+            postsOnPage
+          );
         }
       } catch (error) {
         console.error(`Bulk fetch failed for offset ${offset}:`, error);
-        this.reportProgress(`Bulk offset ${offset} error: ${error.message.substring(0, 50)}...`);
+        this.reportProgress(
+          `Bulk offset ${offset} error: ${error.message.substring(0, 50)}...`
+        );
       }
     }
 
-    const hitRate = (selectedPostStubs.filter(s => this.postCache.has(s.id)).length / selectedPostStubs.length) * 100;
-    this.reportProgress(`Bulk complete. Cache hit rate for selected: ~${hitRate.toFixed(0)}%. Remaining will fetch individually.`);
+    const hitRate =
+      (selectedPostStubs.filter((s) => this.postCache.has(s.id)).length /
+        selectedPostStubs.length) *
+      100;
+    this.reportProgress(
+      `Bulk complete. Cache hit rate for selected: ~${hitRate.toFixed(
+        0
+      )}%. Remaining will fetch individually.`
+    );
   }
 
   /**
-   * Parse raw HTML, download/rewrite inline images from content, 
-   * PLUS handle attachments (fetch images, package, rewrite all references in HTML).
-   * All images (inline + attachments) are converted to PNG.
+   * Parse raw HTML, download/rewrite inline images from content.
+   * FIX APPLIED: Only packages images found within <img> tags in the content.
+   * Ignores postData.attachments to prevent invisible file bloat.
    */
   async processPostImagesAndContent(postData) {
     const rawHtml = postData.content || "";
     const imagesToPackage = [];
-    const attachmentsToPackage = [];
 
     const parser = new DOMParser();
     let doc = parser.parseFromString(rawHtml, "text/html");
@@ -319,18 +344,22 @@ class KemonoContentParser {
 
       let absoluteSrc = this._normalizeUrl(originalSrc);
       try {
-        this.reportProgress(`Fetching inline image: ${originalSrc.substring(0, 30)}…`);
+        this.reportProgress(
+          `Fetching inline image: ${originalSrc.substring(0, 30)}…`
+        );
         let blob = await HttpClient.fetchBlob(absoluteSrc);
         blob = await convertToPng(blob);
         const mime = "image/png";
-        const fileNameInEpub = sanitizeFilename(`inline_${postData.id}_${i}.png`);
+        const fileNameInEpub = sanitizeFilename(
+          `inline_${postData.id}_${i}.png`
+        );
 
         imagesToPackage.push({
           originalUrl: absoluteSrc,
           fileNameInEpub,
           localPathInEpub: `Images/${fileNameInEpub}`,
           blob,
-          mimeType: mime
+          mimeType: mime,
         });
 
         img.setAttribute("src", `../Images/${fileNameInEpub}`);
@@ -341,47 +370,18 @@ class KemonoContentParser {
       }
     }
 
-    if (postData.attachments && Array.isArray(postData.attachments)) {
-      for (let j = 0; j < postData.attachments.length; j++) {
-        const att = postData.attachments[j];
-        if (!att.path || !att.name) continue;
+    // --- FIX: Logic for Attachments Removed ---
+    // Previously, this section iterated postData.attachments and added them to the manifest.
+    // If those attachments weren't referenced by an <img> tag in the HTML, they were
+    // "invisible" bloat in the EPUB.
+    // We now strictly rely on the DOM parser above to decide what images to include.
 
-        const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(att.name);
-        if (!isImage) {
-          console.log(`Skipping non-image attachment: ${att.name}`);
-          continue;
-        }
-
-        let absolutePath = this._normalizeUrl(att.path);
-        try {
-          this.reportProgress(`Fetching attachment image: ${att.name.substring(0, 30)}…`);
-          let blob = await HttpClient.fetchBlob(absolutePath);
-          blob = await convertToPng(blob);
-          const mime = "image/png";
-          const fileNameInEpub = sanitizeFilename(att.name.replace(/\.[^/.]+$/, ".png"));
-
-          attachmentsToPackage.push({
-            originalUrl: absolutePath,
-            fileNameInEpub,
-            localPathInEpub: `Images/${fileNameInEpub}`,
-            blob,
-            mimeType: mime,
-            originalName: att.name
-          });
-        } catch (e) {
-          console.warn(`Failed to fetch attachment ${att.path}:`, e);
-        }
-      }
-    }
-
-    const allImagesToPackage = [...imagesToPackage, ...attachmentsToPackage];
-
-    doc = this._rewriteAllImageReferences(doc, allImagesToPackage);
+    doc = this._rewriteAllImageReferences(doc, imagesToPackage);
 
     const contentOut = doc.body.innerHTML;
     const xhtmlSafe = sanitizeHtmlContent(contentOut);
 
-    return { updatedHtml: xhtmlSafe, imagesToPackage: allImagesToPackage };
+    return { updatedHtml: xhtmlSafe, imagesToPackage };
   }
 
   _normalizeUrl(originalSrc) {
@@ -397,62 +397,95 @@ class KemonoContentParser {
     } else if (!originalSrc.startsWith("http")) {
       absoluteSrc = `${KEMONO_SITE_BASE_URL}/${originalSrc}`;
     }
+    // Clean up cache busters or anchors for the fetch request
     if (absoluteSrc.includes("#") || absoluteSrc.includes("?")) {
-      const cleanSrc = new URL(absoluteSrc, KEMONO_SITE_BASE_URL).origin + new URL(absoluteSrc, KEMONO_SITE_BASE_URL).pathname;
-      absoluteSrc = cleanSrc;
+      try {
+        const u = new URL(absoluteSrc);
+        absoluteSrc = u.origin + u.pathname;
+      } catch (e) {
+        // If URL parsing fails, stick to the original logic
+        const cleanSrc =
+          new URL(absoluteSrc, KEMONO_SITE_BASE_URL).origin +
+          new URL(absoluteSrc, KEMONO_SITE_BASE_URL).pathname;
+        absoluteSrc = cleanSrc;
+      }
     }
     return absoluteSrc;
   }
 
   _rewriteAllImageReferences(doc, imagesToPackage) {
     const urlToLocalMap = new Map();
-    imagesToPackage.forEach(imgInfo => {
+    imagesToPackage.forEach((imgInfo) => {
       urlToLocalMap.set(imgInfo.originalUrl, imgInfo.localPathInEpub);
-      const partialPath = imgInfo.originalUrl.replace(KEMONO_SITE_BASE_URL, "").replace(KEMONO_DATA_BASE_URL.replace("https://", ""), "");
+      // Also map partial paths for robustness
+      const partialPath = imgInfo.originalUrl
+        .replace(KEMONO_SITE_BASE_URL, "")
+        .replace(KEMONO_DATA_BASE_URL.replace("https://", ""), "");
       if (partialPath) urlToLocalMap.set(partialPath, imgInfo.localPathInEpub);
     });
 
+    // Rewrite <img> tags (redundant if loop above did it, but good for safety)
     const allImgElements = doc.querySelectorAll("img");
-    allImgElements.forEach(img => {
+    allImgElements.forEach((img) => {
       const src = img.getAttribute("src");
-      if (src && urlToLocalMap.has(src)) {
+      // Check absolute or mapped
+      const absSrc = this._normalizeUrl(src);
+      if (urlToLocalMap.has(absSrc)) {
+        img.setAttribute("src", urlToLocalMap.get(absSrc));
+      } else if (urlToLocalMap.has(src)) {
         img.setAttribute("src", urlToLocalMap.get(src));
-        if (!img.getAttribute("alt") && imagesToPackage.find(i => i.originalUrl === src)) {
-          img.setAttribute("alt", `Attachment: ${imagesToPackage.find(i => i.originalUrl === src).originalName || "Image"}`);
-        }
       }
     });
 
+    // Rewrite <a> tags linking to the image
     const allLinks = doc.querySelectorAll("a[href]");
-    allLinks.forEach(a => {
+    allLinks.forEach((a) => {
       let href = a.getAttribute("href");
-      if (href && urlToLocalMap.has(href)) {
-        const localHref = urlToLocalMap.get(href);
+      if (!href) return;
+      
+      const absHref = this._normalizeUrl(href);
+      let localHref = null;
+      
+      if (urlToLocalMap.has(absHref)) localHref = urlToLocalMap.get(absHref);
+      else if (urlToLocalMap.has(href)) localHref = urlToLocalMap.get(href);
+
+      if (localHref) {
         a.setAttribute("href", localHref);
-        const imgInfo = imagesToPackage.find(i => i.originalUrl === href);
+        const imgInfo = imagesToPackage.find((i) => i.localPathInEpub === localHref);
+        
+        // Optional: Change text to indicate it's now internal
         if (imgInfo) {
           if (a.textContent.trim().toLowerCase().includes("download")) {
             a.textContent = a.textContent.replace(/Download/i, "View");
           } else if (!a.textContent.trim()) {
-            a.textContent = `View ${imgInfo.originalName}`;
+            a.textContent = `View Image`;
           }
         }
       }
     });
 
+    // Rewrite inline styles (background-image)
     const allElementsWithStyle = doc.querySelectorAll("[style*='url(']");
-    allElementsWithStyle.forEach(el => {
+    allElementsWithStyle.forEach((el) => {
       let style = el.getAttribute("style");
       const urlMatch = style.match(/url\(['"]?([^'")]+)['"]?\)/gi);
       if (urlMatch) {
-        urlMatch.forEach(match => {
-          const urlStart = match.indexOf('(') + 1;
-          const urlEnd = match.lastIndexOf(')');
-          const cssUrl = match.substring(urlStart, urlEnd).replace(/^['"]|['"]$/g, '');
-          if (urlToLocalMap.has(cssUrl)) {
-            const localUrl = urlToLocalMap.get(cssUrl);
-            const escapedCssUrl = cssUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            style = style.replace(new RegExp(escapedCssUrl, 'g'), localUrl);
+        urlMatch.forEach((match) => {
+          const urlStart = match.indexOf("(") + 1;
+          const urlEnd = match.lastIndexOf(")");
+          const cssUrl = match
+            .substring(urlStart, urlEnd)
+            .replace(/^['"]|['"]$/g, "");
+            
+          const absCssUrl = this._normalizeUrl(cssUrl);
+          let localUrl = null;
+
+          if (urlToLocalMap.has(absCssUrl)) localUrl = urlToLocalMap.get(absCssUrl);
+          else if (urlToLocalMap.has(cssUrl)) localUrl = urlToLocalMap.get(cssUrl);
+
+          if (localUrl) {
+            const escapedCssUrl = cssUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            style = style.replace(new RegExp(escapedCssUrl, "g"), localUrl);
           }
         });
         el.setAttribute("style", style);
@@ -573,12 +606,18 @@ export async function generateKemonoEpub(
     parserProgress
   );
 
+  selectedPostStubs.forEach(stub => {
+    if (stub.content) {
+      parser.postCache.set(String(stub.id), stub);
+    }
+  });
+
   const displayName =
     creatorInfo.creatorName && creatorInfo.creatorName.trim()
       ? creatorInfo.creatorName.trim()
       : "Unknown";
 
-  // Generate a proper UUID (v4) – required for dc:identifier.
+  // Generate a proper UUID (v4)
   const uuid = (() => {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
       return crypto.randomUUID();
@@ -753,23 +792,23 @@ img {
     }
   }
 
-  if (selectedPostStubs.length > 0) {
+  // NOTE: Bulk fetch prep is skipped if we already have content in stubs
+  // but we keep the logic safely here.
+  const postsNeedingFetch = selectedPostStubs.filter(s => !s.content);
+  
+  if (postsNeedingFetch.length > 0) {
     progressCallback(
       10,
-      `Preparing for bulk fetch (${selectedPostStubs.length} posts) with filters...`
+      `Preparing for bulk fetch (${postsNeedingFetch.length} posts)...`
     );
     try {
-      await parser.prepareForBulkFetch(selectedPostStubs, {
+      await parser.prepareForBulkFetch(postsNeedingFetch, {
         customQ: options.customQ,
         tagFilter: options.tagFilter
       });
       progressCallback(15, "Bulk fetch preparation complete.");
     } catch (error) {
-      console.error("Error during bulk fetch preparation phase:", error);
-      progressCallback(
-        10,
-        `Bulk fetch prep failed (individual fetches will be used): ${error.message.substring(0, 50)}`
-      );
+      console.error("Bulk fetch prep failed:", error);
     }
   }
 
@@ -778,17 +817,14 @@ img {
   
   for (let i = 0; i < numPosts; i++) {
     const stub = selectedPostStubs[i];
-    const postProgress = 15 + ((i / numPosts) * 70);
     progressCallback(
-      postProgress,
-      `Processing post ${i + 1}/${numPosts}: ${stub.title.substring(0, 30)}…`
+      15 + ((i / numPosts) * 70),
+      `Processing: ${stub.title.substring(0, 30)}…`
     );
 
+    // This will hit cache immediately if we injected it above
     const post = await parser.fetchPostFullData(stub.id);
-    if (!post) {
-      console.warn(`Skipping post ${stub.id}: No data available.`);
-      continue;
-    }
+    if (!post) continue;
 
     const { updatedHtml, imagesToPackage } =
       await parser.processPostImagesAndContent(post);
@@ -797,19 +833,16 @@ img {
       await packer.addImageToManifest(imgInfo);
     }
 
-    // Store processed post info for ToC
     processedPosts.push({
       title: post.title || "Untitled Post",
       id: stub.id
     });
 
-    // Generate chapter ID and filename based on title
     const baseStrict = sanitizeBasenameForXhtmlStrict(post.title || `Chapter_${i}`);
     const chapterId = `ch-${baseStrict}`;
     packer.addChapter(post.title || "Untitled Post", updatedHtml, chapterId);
   }
 
-  // Add ToC page at the beginning
   if (processedPosts.length > 0) {
     packer.addTableOfContents(processedPosts);
   }
