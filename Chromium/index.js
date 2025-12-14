@@ -774,13 +774,14 @@ function setupUIAndListeners() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   const queryParams = getQueryParams();
+  
+  setupUIAndListeners();
+
+  // Standard Logic (Creator Page / Bulk Download)
   service = queryParams.service || "";
   creatorId = queryParams.id || "";
   creatorName = queryParams.name || "";
 
-  setupUIAndListeners();
-
-  // Set default cover only if enabled
   if (enableCover && !coverImageUrl) {
     coverImageUrl = `${KEMONO_IMG_BASE_URL_DEFAULT_ICON}/icons/${service}/${creatorId}`;
     sampleCover = coverImageUrl;
@@ -792,7 +793,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadTagsAndPopulateDropdown();
     await loadPostsPage(0);
   } else {
-    error = "Missing service or creator ID. Cannot load posts for this creator.";
+    // If opened via icon click without parameters, or error
+    if (!service && !creatorId) {
+      error = "Missing service or creator ID. Please navigate to a creator's page on Kemono.";
+    } else {
+      error = "Missing service or creator ID.";
+    }
     isLoadingPosts = false;
     updateOverallUIState();
   }
