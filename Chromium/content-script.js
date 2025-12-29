@@ -186,12 +186,16 @@ function showDownloadConfirmationModal(postData) {
     confirmBtn.disabled = true;
     confirmBtn.textContent = "Generating...";
     statusText.textContent = "Loading modules...";
+    statusText.style.color = "#aaa";
 
     try {
       // 1. Dynamic Import of the Generator
-      // content-script runs in "Isolated World", so we can import directly if resource is web_accessible
+      // Note: This relies on the file being listed in web_accessible_resources in manifest.json
       const { generateKemonoEpub } = await import(chrome.runtime.getURL("EpubGenerator.js"));
 
+      if (typeof JSZip === 'undefined' && !window.JSZip) {
+         throw new Error("JSZip not found in global scope. Check manifest injection.");
+      }
       // 2. Prepare Data
       const creatorInfo = {
         service: postData.service,
