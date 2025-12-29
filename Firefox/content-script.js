@@ -32,7 +32,6 @@ function getCreatorName() {
   return el ? el.textContent.trim() : null;
 }
 
-// Existing Injector for Creator Page
 function injectEpubButton({ service, creatorId }, creatorName) {
   const actionsDiv = document.querySelector(".user-header__actions");
   
@@ -335,3 +334,4 @@ const navigationObserver = new MutationObserver(() => {
 
 navigationObserver.observe(document.body, { childList: true, subtree: true });
 window.addEventListener('popstate', () => setTimeout(runInjector, 100));
+
