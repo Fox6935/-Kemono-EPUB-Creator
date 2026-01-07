@@ -4,7 +4,6 @@
 // CONFIGURATION
 const KEMONO_API_BASE_URL = "https://kemono.cr/api/v1";
 const KEMONO_SITE_BASE_URL = "https://kemono.cr";
-const KEMONO_IMG_BASE_URL = "https://img.kemono.cr";
 const KEMONO_DATA_BASE_URL = "https://kemono.cr/data";
 
 const POSTS_PER_PAGE_FOR_LIST = 50;
@@ -82,23 +81,10 @@ function sanitizeBasenameForXhtmlStrict(basename) {
 }
 
 // XML / HTML HELPERS
-// We now rely on XMLSerializer for the bulk of the work, but we still need
-// a basic escape function for titles in the OPF/NCX which are manual strings.
-const RE_AMP = /&/g;
-const RE_LT = /</g;
-const RE_GT = />/g;
-const RE_QUOT = /"/g;
-const RE_APOS = /'/g;
-
 function escapeXml(str) {
   if (str == null) return "";
-  const s = String(str);
-  return s
-    .replace(RE_AMP, "&amp;")
-    .replace(RE_LT, "&lt;")
-    .replace(RE_GT, "&gt;")
-    .replace(RE_QUOT, "&quot;")
-    .replace(RE_APOS, "&#39;");
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(str).replace(/[&<>"']/g, c => map[c]);
 }
 
 // IMAGE PROCESSING
@@ -213,14 +199,11 @@ class KemonoContentParser {
     const rawHtml = postData.content || "";
     const imagesToPackage = [];
 
-    // 1. Parse HTML into DOM
     let doc = this.domParser.parseFromString(rawHtml, "text/html");
 
-    // 2. Remove Scripts from DOM (Faster than regex on string)
     const scripts = doc.querySelectorAll('script, .ad-container');
     scripts.forEach(s => s.remove());
 
-    // 3. Process Images
     const imgElements = Array.from(doc.querySelectorAll("img"));
     for (let i = 0; i < imgElements.length; i++) {
       const img = imgElements[i];
@@ -228,13 +211,11 @@ class KemonoContentParser {
       if (!originalSrc) continue;
 
       let absoluteSrc = this._normalizeUrl(originalSrc);
-      try {
-        // Only report if we actually need to fetch it (not already reported elsewhere)
-        // this.reportProgress is omitted here to save UI churn during high-volume processing
-        let rawBlob = await HttpClient.fetchBlob(absoluteSrc);
-        
-        const { blob, mimeType, extension } = await processImageBlob(rawBlob, absoluteSrc);
+      if (!absoluteSrc) continue;
 
+      try {
+        let rawBlob = await HttpClient.fetchBlob(absoluteSrc);
+        const { blob, mimeType, extension } = await processImageBlob(rawBlob, absoluteSrc);
         const fileNameInEpub = sanitizeFilename(`inline_${postData.id}_${i}.${extension}`);
 
         imagesToPackage.push({
@@ -252,24 +233,14 @@ class KemonoContentParser {
       }
     }
 
-    // 4. Rewrite Links
     doc = this._rewriteAllImageReferences(doc, imagesToPackage);
 
-    // 5. Serialize to XHTML (The Magic Step)
-    // XMLSerializer produces valid XHTML, self-closing void tags, and handles entities automatically.
-    // We explicitly grab innerHTML logic by iterating children to avoid wrapper tags if possible, 
-    // or just serialize body content.
     let contentOut = "";
-    // Serialize children of body to avoid <body> tags in output
     for (let node of doc.body.childNodes) {
         contentOut += this.xmlSerializer.serializeToString(node);
     }
     
-    // Fallback if empty (rare)
     if (!contentOut) contentOut = "";
-    
-    // Note: XMLSerializer can sometimes produce namespace declarations like xmlns="...".
-    // We can scrub these cheaply with one fast regex if they appear, but usually it's fine for EPUB.
     contentOut = contentOut.replace(/ xmlns="http:\/\/www.w3.org\/1999\/xhtml"/g, "");
 
     return { updatedHtml: contentOut, imagesToPackage };
@@ -292,8 +263,13 @@ class KemonoContentParser {
         const u = new URL(absoluteSrc);
         absoluteSrc = u.origin + u.pathname;
       } catch (e) {
-         const cleanSrc = new URL(absoluteSrc, KEMONO_SITE_BASE_URL).origin + new URL(absoluteSrc, KEMONO_SITE_BASE_URL).pathname;
-         absoluteSrc = cleanSrc;
+         try {
+             const cleanSrc = new URL(absoluteSrc, KEMONO_SITE_BASE_URL).origin + new URL(absoluteSrc, KEMONO_SITE_BASE_URL).pathname;
+             absoluteSrc = cleanSrc;
+         } catch {
+             console.warn(`Could not normalize URL: ${originalSrc}`);
+             return null;
+         }
       }
     }
     return absoluteSrc;
@@ -313,6 +289,8 @@ class KemonoContentParser {
         const val = el.getAttribute(attr);
         if(!val) return;
         const absVal = this._normalizeUrl(val);
+        if(!absVal) return; 
+
         if(urlToLocalMap.has(absVal)) el.setAttribute(attr, urlToLocalMap.get(absVal));
         else if(urlToLocalMap.has(val)) el.setAttribute(attr, urlToLocalMap.get(val));
     };
@@ -418,7 +396,7 @@ export async function generateKemonoEpub(
   });
 
   const displayName = (creatorInfo.creatorName || "Unknown").trim();
-  const uuid = crypto.randomUUID ? crypto.randomUUID() : "urn:uuid:random"; 
+  const uuid = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const packer = new EpubPacker({
     title: displayName,
@@ -455,19 +433,19 @@ export async function generateKemonoEpub(
 
   const numPosts = selectedPostStubs.length;
   const processedPosts = [];
-  
-  // Update Frequency: Every 50 posts or 1% of total (capped)
   const updateFrequency = Math.min(50, Math.max(10, Math.floor(numPosts / 100)));
+  
+  // TRACKER FOR FILENAME UNIQUENESS
+  // Set contains lowercase versions of all filenames used so far
+  const usedFilenames = new Set();
 
   for (let i = 0; i < numPosts; i++) {
-    // Yield to event loop every 10 posts
     if (i % 10 === 0) {
       await new Promise(resolve => setTimeout(resolve, 0));
     }
 
     const stub = selectedPostStubs[i];
 
-    // Throttle UI updates
     if (i === 0 || i === numPosts - 1 || i % updateFrequency === 0) {
       const percent = 15 + ((i / numPosts) * 70);
       progressCallback(
@@ -486,9 +464,28 @@ export async function generateKemonoEpub(
       await packer.addImageToManifest(imgInfo);
     }
 
-    processedPosts.push({ title: post.title || "Untitled Post", id: stub.id });
+    // --- ROBUST FILENAME GENERATION START ---
+    let baseStrict = sanitizeBasenameForXhtmlStrict(post.title || `Chapter_${i}`);
+    let candidate = baseStrict;
+    let counter = 1;
+    
+    // Check against lowercase set to ensure case-insensitive uniqueness
+    while (usedFilenames.has(candidate.toLowerCase())) {
+        const suffix = counter.toString().padStart(2, '0');
+        candidate = `${baseStrict}_${suffix}`;
+        counter++;
+    }
+    
+    baseStrict = candidate;
+    usedFilenames.add(baseStrict.toLowerCase());
+    // --- ROBUST FILENAME GENERATION END ---
+    
+    processedPosts.push({ 
+        title: post.title || "Untitled Post", 
+        id: stub.id,
+        filename: baseStrict 
+    });
 
-    const baseStrict = sanitizeBasenameForXhtmlStrict(post.title || `Chapter_${i}`);
     packer.addChapter(post.title || "Untitled Post", updatedHtml, `ch-${baseStrict}`);
   }
 
@@ -530,7 +527,7 @@ class EpubPacker {
       this.manifestItems.push({ id: "css", href: "Styles/stylesheet.css", mediaType: "text/css" });
   }
 
-  async addCoverImage(imageBlob, fileNameInEpub, mimeType) {
+  addCoverImage(imageBlob, fileNameInEpub, mimeType) {
     const imageId = "cover-image";
     const imagePath = `Images/${fileNameInEpub}`;
     this.imagesFolder.file(fileNameInEpub, imageBlob);
@@ -584,13 +581,13 @@ class EpubPacker {
   }
 
   addTableOfContents(posts) {
-     const tocXhtml = `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Table of Contents</title><link rel="stylesheet" type="text/css" href="../Styles/stylesheet.css"/></head><body class="toc-page"><nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol class="toc-list">${posts.map(p=>`<li><a href="${sanitizeBasenameForXhtmlStrict(p.title)}.xhtml">${escapeXml(p.title)}</a></li>`).join("")}</ol></nav></body></html>`;
+     const tocXhtml = `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Table of Contents</title><link rel="stylesheet" type="text/css" href="../Styles/stylesheet.css"/></head><body class="toc-page"><nav epub:type="toc" id="toc"><h1>Table of Contents</h1><ol class="toc-list">${posts.map(p=>`<li><a href="${p.filename}.xhtml">${escapeXml(p.title)}</a></li>`).join("")}</ol></nav></body></html>`;
      this.textFolder.file("toc.xhtml", tocXhtml);
      this.manifestItems.push({ id: "toc", href: "Text/toc.xhtml", mediaType: "application/xhtml+xml", properties: "nav" });
      if(this.spineOrder.includes("cover-xhtml")) this.spineOrder.splice(this.spineOrder.indexOf("cover-xhtml")+1, 0, "toc");
      else this.spineOrder.unshift("toc");
      
-     this.tocEntries = posts.map(p => ({ rawTitle: p.title, href: `Text/${sanitizeBasenameForXhtmlStrict(p.title)}.xhtml` }));
+     this.tocEntries = posts.map(p => ({ rawTitle: p.title, href: `Text/${p.filename}.xhtml` }));
   }
 
   buildContentOpf() {
