@@ -40,7 +40,7 @@ function injectEpubButton({ service, creatorId }, creatorName) {
 
   const btn = document.createElement("button");
   btn.id = "kemono-epub-download-button";
-  btn.className = "_favoriteButton_377bd2a"; // Re-use existing class for styling
+  btn.className = "_favoriteButton_377bd2a";
   btn.style.marginLeft = "10px";
   btn.type = "button";
   btn.textContent = "Download EPUB";
@@ -114,8 +114,7 @@ function scrapeSinglePostData() {
     id: postId,
     title,
     published,
-    content,
-    attachments: [] 
+    content
   };
 }
 
@@ -190,7 +189,6 @@ function showDownloadConfirmationModal(postData) {
 
     try {
       // 1. Dynamic Import of the Generator
-      // Note: This relies on the file being listed in web_accessible_resources in manifest.json
       const { generateKemonoEpub } = await import(chrome.runtime.getURL("EpubGenerator.js"));
 
       if (typeof JSZip === 'undefined' && !window.JSZip) {
@@ -207,7 +205,7 @@ function showDownloadConfirmationModal(postData) {
 
       const options = {
         fileName: input.value || "post.epub",
-        coverImageUrl: null, // Single post usually doesn't have a specific cover configured this way
+        coverImageUrl: null, 
       };
 
       // 3. Run Generator
@@ -334,4 +332,3 @@ const navigationObserver = new MutationObserver(() => {
 
 navigationObserver.observe(document.body, { childList: true, subtree: true });
 window.addEventListener('popstate', () => setTimeout(runInjector, 100));
-
