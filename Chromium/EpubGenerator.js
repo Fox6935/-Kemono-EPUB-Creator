@@ -574,10 +574,7 @@ class EpubPacker {
 <body><h1>${escapeXml(title)}</h1>${htmlContent}</body></html>`;
       this.textFolder.file(fileName, xhtml);
       this.manifestItems.push({ id: chapterId, href: `Text/${fileName}`, mediaType: "application/xhtml+xml" });
-      
-      if (this.spineOrder.includes("toc")) this.spineOrder.splice(this.spineOrder.indexOf("toc") + 1, 0, chapterId);
-      else if (this.spineOrder.includes("cover-xhtml")) this.spineOrder.splice(this.spineOrder.indexOf("cover-xhtml") + 1, 0, chapterId);
-      else this.spineOrder.push(chapterId);
+      this.spineOrder.push(chapterId);
   }
 
   addTableOfContents(posts) {
