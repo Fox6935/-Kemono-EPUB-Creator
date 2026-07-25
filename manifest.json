@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Kemono EPUB Creator",
+  "version": "1.3.0",
+  "description": "Generate EPUBs from Kemono and Pawchive posts in a new tab.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://kemono.cr/*", "https://pawchive.pw/*"],
+      "css": ["content-script.css"],
+      "js": [
+        "siteConfig.js",
+        "content-script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["siteConfig.js", "background.js"]
+  },
+  "permissions": ["activeTab"],
+  "host_permissions": [
+    "https://kemono.cr/*",
+    "https://*.kemono.cr/*",
+    "https://pawchive.pw/*",
+    "https://*.pawchive.pw/*"
+  ],
+  "action": {
+    "default_title": "Kemono EPUB Creator"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "EpubGenerator.js",
+        "libs/jszip.min.js"
+      ],
+      "matches": ["https://kemono.cr/*", "https://pawchive.pw/*"]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "kemono-epub-creator@example.com",
+      "data_collection_permissions": {
+        "required": ["none"]
+      },
+      "strict_min_version": "140.0"
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
+}

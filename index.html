@@ -8,6 +8,7 @@
     />
     <title>Kemono EPUB Creator</title>
     <link rel="stylesheet" href="index.css" />
+    <script src="siteConfig.js"></script>
   </head>
   <body>
     <div id="epub-creator-container" class="epub-creator-container">
@@ -16,6 +17,19 @@
         class="message-text info-message"
         style="display: none;"
       ></p>
+      <p
+        id="error-message-div"
+        class="message-text error-message"
+        role="alert"
+        style="display: none;"
+      ></p>
+      <p
+        id="noPostsFoundMessage"
+        class="message-text"
+        style="display: none;"
+      >
+        No posts found for this creator to list.
+      </p>
 
       <div
         id="main-content-sections-wrapper"
@@ -30,12 +44,6 @@
         <h2 class="epub-creator-title">
           Create EPUB for: <span id="creator-name-display"></span>
         </h2>
-
-        <p
-          id="error-message-div"
-          class="message-text error-message"
-          style="display: none;"
-        ></p>
 
         <div class="epub-options-section">
           <div class="form-group">
@@ -72,7 +80,7 @@
             <input
               id="coverImageUrlInput"
               type="url"
-              placeholder="e.g., https://img.kemono.cr/icons/..."
+              placeholder="Optional creator cover URL"
             />
             <img
               id="cover-preview-img"
@@ -87,6 +95,7 @@
 
         <div class="post-filter-section">
           <div class="form-group">
+            <label for="tagSelect">Post Filter:</label>
             <select id="tagSelect">
             </select>
             <input id="customSearchInput" type="text" placeholder="Enter 3+ chars for custom search" style="display: none;" />
@@ -102,11 +111,13 @@
             id="progressBar"
             value="0"
             max="100"
+            aria-label="EPUB generation progress"
             style="display: none;"
           ></progress>
           <span
             id="progressMsgSpan"
             class="progress-message"
+            aria-live="polite"
             style="display: none;"
           ></span>
         </div>
@@ -144,22 +155,12 @@
               style="display: none;"
             ></p>
           </div>
-          <p
-            id="noPostsFoundMessage"
-            class="message-text"
-            style="display: none;"
-          >
-            No posts found for this creator to list.
-          </p>
         </div>
       </div>
     </div>
 
     <script src="libs/jszip.min.js"></script>
-    <script src="libs/FileSaver.min.js"></script>
 
-    <script type="module" src="EpubGenerator.js"></script>
-    <script type="module" src="filenameGenerator.js"></script>
     <script type="module" src="index.js"></script>
   </body>
 </html>
