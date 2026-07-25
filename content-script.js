@@ -1,76 +1,181 @@
 // content-script.js
 
-function isKemonoCr() {
+function getCurrentSite() {
   try {
-    const u = new URL(window.location.href);
-    return u.origin === "https://kemono.cr";
+    return ExtensionSites.fromHostname(window.location.hostname);
   } catch {
-    return false;
+    return null;
   }
 }
 
 function isCreatorPagePath(pathname) {
-  const creatorBase = /^\/[^/]+\/user\/\d+(?:\/.*)?$/;
+  const creatorBase = /^\/[^/]+\/user\/[^/]+(?:\/.*)?$/;
   const isCreator = creatorBase.test(pathname);
-  const isSinglePost = /\/user\/\d+\/post\/\d+/.test(pathname);
+  const isSinglePost = /\/user\/[^/]+\/post\/[^/]+/.test(pathname);
   return isCreator && !isSinglePost;
 }
 
-// New function to detect single post path
 function isSinglePostPath(pathname) {
-  return /\/user\/\d+\/post\/\d+/.test(pathname);
+  return /\/user\/[^/]+\/post\/[^/]+/.test(pathname);
 }
 
 function getServiceAndCreatorIdFromPath(pathname) {
-  const m = pathname.match(/^\/([^/]+)\/user\/(\d+)(?:\/.*)?$/);
+  const m = pathname.match(/^\/([^/]+)\/user\/([^/]+)(?:\/.*)?$/);
   if (!m) return null;
   return { service: m[1], creatorId: m[2] };
 }
 
 function getCreatorName() {
   const el = document.querySelector('.user-header__name span[itemprop="name"]');
-  return el ? el.textContent.trim() : null;
+  const fallback = document.querySelector(".user-header__name");
+  return (el || fallback)?.textContent.trim() || null;
 }
 
-function injectEpubButton({ service, creatorId }, creatorName) {
+function createEpubButton(id, label, title) {
+  const btn = document.createElement("button");
+  btn.id = id;
+  btn.className = "kemono-epub-button";
+  btn.type = "button";
+  btn.title = title;
+
+  const icon = document.createElement("span");
+  icon.className = "kemono-epub-button__icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "↓";
+
+  const text = document.createElement("span");
+  text.className = "kemono-epub-button__label";
+  text.textContent = label;
+
+  btn.append(icon, text);
+  return btn;
+}
+
+function ensureEpubButton(actionsDiv, id, label, title) {
+  let btn = document.getElementById(id);
+  const isReusable =
+    btn &&
+    btn.parentElement === actionsDiv &&
+    btn.classList.contains("kemono-epub-button");
+
+  if (!isReusable) {
+    btn?.remove();
+    btn = createEpubButton(id, label, title);
+    actionsDiv.appendChild(btn);
+  } else {
+    btn.title = title;
+    const labelElement = btn.querySelector(".kemono-epub-button__label");
+    if (labelElement) labelElement.textContent = label;
+  }
+
+  return btn;
+}
+
+function decodeAttachmentName(value) {
+  const name = String(value || "").trim();
+  if (!name) return "";
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
+function scrapePawchiveAttachments(root = document) {
+  const links = root.querySelectorAll(
+    ".post__files a[download][href], a.post__attachment-link[href]"
+  );
+  const attachments = [];
+  const seenPaths = new Set();
+
+  for (const link of links) {
+    try {
+      const url = new URL(link.getAttribute("href"), window.location.href);
+      if (
+        url.hostname !== "file.pawchive.pw" ||
+        !url.pathname.startsWith("/data/")
+      ) {
+        continue;
+      }
+
+      const pathKey = `${url.origin}${url.pathname}`;
+      if (seenPaths.has(pathKey)) continue;
+      seenPaths.add(pathKey);
+
+      const textName = link.textContent.trim().replace(/^Download\s+/i, "");
+      const filename = decodeAttachmentName(
+        link.getAttribute("download") ||
+        url.searchParams.get("f") ||
+        textName ||
+        url.pathname.split("/").pop()
+      );
+      if (!filename) continue;
+
+      attachments.push({
+        name: filename,
+        path: url.href
+      });
+    } catch {
+      // Ignore malformed download links while preserving the rest of the post.
+    }
+  }
+
+  return attachments;
+}
+
+function injectEpubButton({ service, creatorId }, creatorName, site) {
   const actionsDiv = document.querySelector(".user-header__actions");
   
   if (!actionsDiv) return false;
-  if (document.getElementById("kemono-epub-download-button")) return true;
+  const btn = ensureEpubButton(
+    actionsDiv,
+    "kemono-epub-download-button",
+    "Download EPUB",
+    "Generate an EPUB from this creator's posts"
+  );
 
-  const btn = document.createElement("button");
-  btn.id = "kemono-epub-download-button";
-  btn.className = "_favoriteButton_377bd2a";
-  btn.style.marginLeft = "10px";
-  btn.type = "button";
-  btn.textContent = "Download EPUB";
-  btn.title = "Generate an EPUB from this creator's posts";
-
-  btn.addEventListener("click", () => {
+  btn.onclick = () => {
+    const currentSite = getCurrentSite() || site;
+    const currentParams =
+      getServiceAndCreatorIdFromPath(window.location.pathname) ||
+      { service, creatorId };
     const currentName = getCreatorName() || creatorName || "";
     chrome.runtime.sendMessage(
       {
         action: "openEpubCreatorTab",
-        service,
-        creatorId,
+        site: currentSite.key,
+        service: currentParams.service,
+        creatorId: currentParams.creatorId,
         creatorName: currentName
       },
-      () => {}
+      () => {
+        // Read lastError so a transient extension shutdown does not emit an
+        // unchecked callback warning.
+        void chrome.runtime.lastError;
+      }
     );
-  });
+  };
 
-  actionsDiv.appendChild(btn);
   return true;
 }
 
 // --- NEW FEATURES FOR SINGLE POST ---
 
 function scrapeSinglePostData() {
+  const site = getCurrentSite();
   const titleEl = document.querySelector('.post__title span:first-child');
   const title = titleEl ? titleEl.textContent.trim() : "Untitled Post";
 
   const timeEl = document.querySelector('.post__published time');
-  const published = timeEl ? timeEl.getAttribute('datetime') : new Date().toISOString();
+  const publishedContainer = document.querySelector(".post__published");
+  const publishedText = publishedContainer?.textContent || "";
+  const textDate = publishedText.match(
+    /\b\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?(?:Z|[+-]\d{2}:?\d{2})?\b/
+  )?.[0];
+  const published =
+    timeEl?.getAttribute("datetime") ||
+    textDate ||
+    new Date().toISOString();
 
   const contentEl = document.querySelector('.post__content');
   let content = "";
@@ -82,18 +187,6 @@ function scrapeSinglePostData() {
     const scripts = clone.querySelectorAll('script, .ad-container');
     scripts.forEach(s => s.remove());
 
-    // 2. Unwrap <pre> tags (Fix formatting issue)
-    const preTags = clone.querySelectorAll('pre');
-    preTags.forEach(pre => {
-      const parent = pre.parentNode;
-      // Move all children of <pre> out to the parent, right before the <pre>
-      while (pre.firstChild) {
-        parent.insertBefore(pre.firstChild, pre);
-      }
-      // Remove the empty <pre> tag
-      parent.removeChild(pre);
-    });
-
     content = clone.innerHTML;
   }
 
@@ -104,17 +197,22 @@ function scrapeSinglePostData() {
 
   // Get Service/ID from URL
   const pathParams = getServiceAndCreatorIdFromPath(window.location.pathname);
-  const postIdMatch = window.location.pathname.match(/post\/(\d+)/);
+  const postIdMatch = window.location.pathname.match(/post\/([^/]+)/);
   const postId = postIdMatch ? postIdMatch[1] : Date.now().toString();
+  const attachments =
+    site?.key === "pawchive" ? scrapePawchiveAttachments() : [];
 
   return {
+    site: site?.key || "kemono",
     service: pathParams ? pathParams.service : 'unknown',
     creatorId: pathParams ? pathParams.creatorId : '0',
     creatorName,
     id: postId,
     title,
     published,
-    content
+    content,
+    attachments,
+    _epubComplete: true
   };
 }
 
@@ -135,6 +233,9 @@ function showDownloadConfirmationModal(postData) {
 
   // Create Modal Box
   const modal = document.createElement("div");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", "epub-single-modal-title");
   modal.style.cssText = `
     background: #2c2c2c; color: #e0e0e0; padding: 20px;
     border-radius: 8px; width: 400px; max-width: 90%;
@@ -144,6 +245,7 @@ function showDownloadConfirmationModal(postData) {
 
   // Title
   const head = document.createElement("h3");
+  head.id = "epub-single-modal-title";
   head.textContent = "Download Post as EPUB";
   head.style.marginTop = "0";
 
@@ -153,8 +255,15 @@ function showDownloadConfirmationModal(postData) {
   label.style.fontSize = "0.9em";
   
   const input = document.createElement("input");
+  input.id = "epub-single-filename";
+  label.htmlFor = input.id;
   input.type = "text";
-  const safeTitle = postData.title.replace(/[\/\\?%*:|"<>]/g, "_").trim();
+  const safeTitle =
+    postData.title
+      .replace(/[\u0000-\u001F\u007F\/\\?%*:|"<>]/g, "_")
+      .trim()
+      .replace(/[. ]+$/g, "") ||
+    "post";
   input.value = `${safeTitle}.epub`;
   input.style.cssText = `
     padding: 8px; width: 100%; background: #3a3a3a; 
@@ -174,7 +283,14 @@ function showDownloadConfirmationModal(postData) {
   const cancelBtn = document.createElement("button");
   cancelBtn.textContent = "Cancel";
   cancelBtn.style.cssText = "padding: 8px 16px; cursor: pointer; background: #444; border: none; color: white; border-radius: 4px;";
-  cancelBtn.onclick = () => overlay.remove();
+  let generationController = null;
+  const closeModal = () => {
+    generationController?.abort(
+      new DOMException("Generation cancelled.", "AbortError")
+    );
+    overlay.remove();
+  };
+  cancelBtn.onclick = closeModal;
 
   const confirmBtn = document.createElement("button");
   confirmBtn.textContent = "Download";
@@ -182,6 +298,7 @@ function showDownloadConfirmationModal(postData) {
   
   // --- CLICK HANDLER WITH DYNAMIC IMPORT ---
   confirmBtn.onclick = async () => {
+    generationController = new AbortController();
     confirmBtn.disabled = true;
     confirmBtn.textContent = "Generating...";
     statusText.textContent = "Loading modules...";
@@ -190,12 +307,9 @@ function showDownloadConfirmationModal(postData) {
     try {
       // 1. Dynamic Import of the Generator
       const { generateKemonoEpub } = await import(chrome.runtime.getURL("EpubGenerator.js"));
-
-      if (typeof JSZip === 'undefined' && !window.JSZip) {
-         throw new Error("JSZip not found in global scope. Check manifest injection.");
-      }
       // 2. Prepare Data
       const creatorInfo = {
+        site: postData.site,
         service: postData.service,
         creatorId: postData.creatorId,
         creatorName: postData.creatorName
@@ -205,7 +319,8 @@ function showDownloadConfirmationModal(postData) {
 
       const options = {
         fileName: input.value || "post.epub",
-        coverImageUrl: null, 
+        coverImageUrl: null,
+        signal: generationController.signal
       };
 
       // 3. Run Generator
@@ -225,6 +340,10 @@ function showDownloadConfirmationModal(postData) {
       setTimeout(() => overlay.remove(), 1000);
 
     } catch (err) {
+      if (err?.name === "AbortError") {
+        overlay.remove();
+        return;
+      }
       console.error(err);
       statusText.textContent = "Error: " + err.message;
       statusText.style.color = "#ff8080";
@@ -243,7 +362,13 @@ function showDownloadConfirmationModal(postData) {
   modal.appendChild(btnContainer);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
-  
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeModal();
+  });
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeModal();
+  });
   input.focus();
 }
 
@@ -251,18 +376,14 @@ function injectSinglePostButton() {
   const actionsDiv = document.querySelector(".post__actions");
   
   if (!actionsDiv) return false;
-  if (document.getElementById("kemono-single-epub-btn")) return true;
+  const btn = ensureEpubButton(
+    actionsDiv,
+    "kemono-single-epub-btn",
+    "Download Post",
+    "Download this post as a standalone EPUB"
+  );
 
-  const btn = document.createElement("button");
-  btn.id = "kemono-single-epub-btn";
-  btn.className = "_favoriteButton_377bd2a"; // Reuse Kemono class
-  btn.style.marginLeft = "10px";
-  btn.type = "button";
-  // Add a nice icon or text
-  btn.innerHTML = `<span style="font-size:1.2em; margin-right:4px;">⬇</span><span>Download Post</span>`;
-  btn.title = "Download this post as a standalone EPUB";
-
-  btn.addEventListener("click", () => {
+  btn.onclick = () => {
     try {
       const data = scrapeSinglePostData();
       showDownloadConfirmationModal(data);
@@ -270,29 +391,30 @@ function injectSinglePostButton() {
       console.error("Error scraping post data:", e);
       alert("Could not parse post data. See console.");
     }
-  });
+  };
 
-  actionsDiv.appendChild(btn);
   return true;
 }
 
 // --- MAIN INJECTOR LOGIC ---
 
 function runInjector() {
-  if (!isKemonoCr()) return;
+  const site = getCurrentSite();
+  if (!site) return;
   
   const pathname = window.location.pathname;
 
   // --- Case 1: Creator Page ---
   if (isCreatorPagePath(pathname)) {
+    document.getElementById("kemono-single-epub-btn")?.remove();
     const params = getServiceAndCreatorIdFromPath(pathname);
     if (params) {
       // Try to inject immediately
-      if (injectEpubButton(params, getCreatorName())) return;
+      if (injectEpubButton(params, getCreatorName(), site)) return;
 
       // If failed (DOM not ready), observe until it appears
       const observer = new MutationObserver((mutations, obs) => {
-        if (injectEpubButton(params, getCreatorName())) {
+        if (injectEpubButton(params, getCreatorName(), site)) {
           obs.disconnect();
         }
       });
@@ -303,6 +425,7 @@ function runInjector() {
   
   // --- Case 2: Single Post Page ---
   else if (isSinglePostPath(pathname)) {
+    document.getElementById("kemono-epub-download-button")?.remove();
     // Try to inject immediately
     if (injectSinglePostButton()) return;
 
@@ -322,13 +445,44 @@ runInjector();
 
 // Navigation Handling (SPA support)
 let lastUrl = window.location.href;
+let injectorTimer = null;
+
+function scheduleInjector(delay = 75) {
+  clearTimeout(injectorTimer);
+  injectorTimer = setTimeout(runInjector, delay);
+}
+
+function isCurrentPageButtonReady() {
+  const pathname = window.location.pathname;
+  let actionsDiv;
+  let button;
+
+  if (isCreatorPagePath(pathname)) {
+    actionsDiv = document.querySelector(".user-header__actions");
+    button = document.getElementById("kemono-epub-download-button");
+  } else if (isSinglePostPath(pathname)) {
+    actionsDiv = document.querySelector(".post__actions");
+    button = document.getElementById("kemono-single-epub-btn");
+  } else {
+    return true;
+  }
+
+  if (!actionsDiv) return false;
+  return button?.parentElement === actionsDiv && typeof button.onclick === "function";
+}
+
 const navigationObserver = new MutationObserver(() => {
   const currentUrl = window.location.href;
   if (currentUrl !== lastUrl) {
     lastUrl = currentUrl;
-    setTimeout(runInjector, 500); // Slight delay for DOM to settle
+    scheduleInjector(100);
+  } else if (!isCurrentPageButtonReady()) {
+    // Pawchive replaces/clones action containers during history navigation.
+    // DOM event listeners are not copied by cloneNode, so rebind if needed.
+    scheduleInjector();
   }
 });
 
 navigationObserver.observe(document.body, { childList: true, subtree: true });
-window.addEventListener('popstate', () => setTimeout(runInjector, 100));
+window.addEventListener("popstate", () => scheduleInjector(100));
+window.addEventListener("pageshow", () => scheduleInjector());

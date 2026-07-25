@@ -1,7 +1,13 @@
 // index.js
 // HTML/JS logic for the EPUB creator UI in a new tab.
 
-import { generateKemonoEpub, fetchPostListPage, fetchCreatorProfile, fetchTagsList } from "./EpubGenerator.js";
+import {
+  generateKemonoEpub,
+  fetchPostListPage,
+  fetchCreatorProfile,
+  fetchTagsList,
+  fetchPawchivePostCount
+} from "./EpubGenerator.js";
 import {
   sanitizeAndTruncate,
   truncateTitle,
@@ -14,7 +20,7 @@ let selectedPosts = {};
 let isLoadingPosts = true;
 let isLoadingMore = false;
 let error = null;
-let totalAvailablePosts = 0;
+let totalAvailablePosts = null;
 
 let fileName = "";
 let isFilenameManuallyEdited = false;
@@ -24,6 +30,8 @@ let sampleCover = "";
 let isPacking = false;
 let progress = 0;
 let progressMessage = "";
+let packingAbortController = null;
+let postsLoadController = null;
 
 // Filter state
 let currentFilter = { tag: "", q: "" };
@@ -31,6 +39,7 @@ let currentFilter = { tag: "", q: "" };
 let service = "";
 let creatorId = "";
 let creatorName = "";
+let siteKey = "";
 
 let availableTags = [];
 
@@ -43,10 +52,10 @@ let rangeEndId = "";
 
 let totalFetchedOffset = 0;
 let atEndOfPosts = false;
+let countRequestVersion = 0;
 
 // --- Constants ---
 const POSTS_PER_PAGE_FOR_LIST = 50;
-const KEMONO_IMG_BASE_URL_DEFAULT_ICON = "https://img.kemono.cr";
 const FILENAME_PATTERN_STORAGE_KEY = "kemonoEpubFilenamePattern";
 const COVER_ENABLED_STORAGE_KEY = "kemonoEpubCoverEnabled";
 
@@ -84,16 +93,7 @@ let applyFilterBtn = null;
 
 // --- Utils ---
 function getQueryParams() {
-  const params = {};
-  window.location.search
-    .substring(1)
-    .split("&")
-    .forEach((param) => {
-      if (!param) return;
-      const [key, value] = param.split("=");
-      params[key] = decodeURIComponent(value || "");
-    });
-  return params;
+  return Object.fromEntries(new URLSearchParams(window.location.search));
 }
 
 function filterPostsForDisplay() {
@@ -112,9 +112,17 @@ function filterPostsForDisplay() {
 // Load tags and populate dropdown
 async function loadTagsAndPopulateDropdown() {
   if (!service || !creatorId) return;
+  const site = ExtensionSites.get(siteKey);
+  if (!site.supportsTags) {
+    tagSelect.innerHTML = '<option value="custom">Custom Search</option>';
+    tagSelect.value = "custom";
+    currentFilter.tag = "";
+    updateFilterUI();
+    return;
+  }
   try {
     isLoadingPosts = true;
-    availableTags = await fetchTagsList(service, creatorId);
+    availableTags = await fetchTagsList(siteKey, service, creatorId);
     if (tagSelect) {
       tagSelect.innerHTML = `
         <option value="">All Posts (No Filter)</option>
@@ -165,7 +173,7 @@ function handleApplyFilter() {
   let newQ = "";
   if (newTag === "custom") {
     newQ = customSearchInput ? customSearchInput.value.trim() : "";
-    if (newQ.length < 3) {
+    if (newQ.length > 0 && newQ.length < 3) {
       alert("Custom search (q=) requires at least 3 characters.");
       return;
     }
@@ -206,7 +214,7 @@ function handleCoverToggleChange(event) {
     updateCoverPreviewDisplay();
   } else {
     if (!coverImageUrl) {
-      coverImageUrl = `${KEMONO_IMG_BASE_URL_DEFAULT_ICON}/icons/${service}/${creatorId}`;
+      coverImageUrl = ExtensionSites.get(siteKey).iconUrl(service, creatorId);
       sampleCover = coverImageUrl;
       if (coverImageUrlInput) coverImageUrlInput.value = coverImageUrl;
       updateCoverPreviewDisplay();
@@ -305,18 +313,35 @@ function updateSelectedCountsDisplay() {
       totalPostsCountSpan.textContent = "...";
     } else if (allFetchedPosts.length === 0) {
       totalPostsCountSpan.textContent = "0";
+    } else if (totalAvailablePosts == null) {
+      totalPostsCountSpan.textContent = `? (${allFetchedPosts.length} loaded)`;
     } else {
       totalPostsCountSpan.textContent = totalAvailablePosts;
     }
   }
 
   if (packEpubButton) {
-    packEpubButton.disabled =
-      isPacking || count === 0 || isLoadingPosts || isLoadingMore;
+    packEpubButton.disabled = isPacking
+      ? !!packingAbortController?.signal.aborted
+      : count === 0 || isLoadingPosts || isLoadingMore;
     packEpubButton.textContent = isPacking
-      ? `Packing... ${progress.toFixed(0)}%`
+      ? packingAbortController?.signal.aborted
+        ? "Cancelling..."
+        : `Cancel Generation (${progress.toFixed(0)}%)`
       : `Pack ${count} Post(s) as EPUB`;
   }
+}
+
+function updatePackingProgressUI() {
+  if (progressBar) {
+    progressBar.style.display = isPacking ? "block" : "none";
+    progressBar.value = progress;
+  }
+  if (progressMsgSpan) {
+    progressMsgSpan.style.display = isPacking ? "inline" : "none";
+    progressMsgSpan.textContent = progressMessage;
+  }
+  updateSelectedCountsDisplay();
 }
 
 function updateCoverPreviewDisplay() {
@@ -369,7 +394,7 @@ function updateOverallUIState() {
   const showNoPostsMessage =
     !isLoadingPosts && allFetchedPosts.length === 0 && !error;
   const showMainContentWrapper =
-    !showLoadingMessage && !showNoPostsMessage && !error;
+    !showLoadingMessage && allFetchedPosts.length > 0;
 
   if (mainContentSectionsWrapper) {
     mainContentSectionsWrapper.style.display = showMainContentWrapper
@@ -390,7 +415,9 @@ function updateOverallUIState() {
     noPostsFoundMessage.style.display = showNoPostsMessage ? "block" : "none";
   }
 
-  const showLoadButtons = !atEndOfPosts && totalFetchedOffset < totalAvailablePosts && !isLoadingMore && !isPacking && !showLoadingMessage && !showNoPostsMessage;
+  const hasMoreByCount =
+    totalAvailablePosts == null || totalFetchedOffset < totalAvailablePosts;
+  const showLoadButtons = !atEndOfPosts && hasMoreByCount && !isLoadingMore && !isPacking && !showLoadingMessage && !showNoPostsMessage;
   if (loadMoreBtn) {
     loadMoreBtn.style.display = showLoadButtons ? "inline-block" : "none";
     loadMoreBtn.disabled = isLoadingMore;
@@ -420,55 +447,95 @@ async function loadPostsPage(offsetToLoad, loadAll = false) {
     return;
   }
 
+  postsLoadController?.abort(
+    new DOMException("Superseded by a newer post request.", "AbortError")
+  );
+  const loadController = new AbortController();
+  postsLoadController = loadController;
+  const { signal } = loadController;
+
   const initialLoading = offsetToLoad === 0;
   if (initialLoading) {
+    isLoadingPosts = true;
     allFetchedPosts = [];
     totalFetchedOffset = 0;
     atEndOfPosts = false;
     selectedPosts = {};
     rangeStartId = "";
     rangeEndId = "";
+    updateOverallUIState();
     
     try {
-      const { postCount, creatorName: apiCreatorName } = await fetchCreatorProfile(service, creatorId);
+      const { postCount, creatorName: apiCreatorName } = await fetchCreatorProfile(
+        siteKey,
+        service,
+        creatorId,
+        { signal }
+      );
       totalAvailablePosts = postCount;
+      if (siteKey === "kemono" && currentFilter.q) {
+        totalAvailablePosts = null;
+      } else if (siteKey === "kemono" && currentFilter.tag) {
+        totalAvailablePosts =
+          availableTags.find((tag) => tag.tag === currentFilter.tag)?.post_count ?? null;
+      }
       
       if (typeof apiCreatorName === "string" && apiCreatorName.trim()) {
         creatorName = apiCreatorName.trim();
       }
-      console.log(`Initial load: Total posts=${totalAvailablePosts}, creator=${creatorName}`);
+      if (siteKey === "pawchive") {
+        const requestVersion = ++countRequestVersion;
+        try {
+          const scrapedCount = await fetchPawchivePostCount(
+            service,
+            creatorId,
+            currentFilter.q,
+            { signal }
+          );
+          if (requestVersion === countRequestVersion && scrapedCount != null) {
+            totalAvailablePosts = scrapedCount;
+          }
+        } catch {
+          // Post loading still works when Pawchive changes its page markup.
+        }
+      }
     } catch (err) {
-      error = err.message || "Failed to load creator profile.";
-      console.error("Error fetching creator profile:", err);
-      isLoadingPosts = false;
-      isLoadingMore = false;
-      updateOverallUIState();
-      return;
+      if (err?.name === "AbortError") return;
+      totalAvailablePosts = null;
+      console.warn("Creator profile unavailable; continuing with post list:", err);
     }
   }
 
-  if (initialLoading) isLoadingPosts = true;
-  else isLoadingMore = true;
+  if (!initialLoading) isLoadingMore = true;
   error = null;
   updateOverallUIState();
 
   let accumulatedPosts = [...allFetchedPosts];
   let currentOffset = offsetToLoad;
   let stillFetching = true;
-  let pagesFetchedInThisCall = 0;
+  const commitAccumulatedPosts = () => {
+    allFetchedPosts = accumulatedPosts.sort(
+      (a, b) => new Date(b.published).getTime() - new Date(a.published).getTime()
+    );
+    totalFetchedOffset = currentOffset;
+    if (atEndOfPosts) totalAvailablePosts = allFetchedPosts.length;
+
+    if (allFetchedPosts.length > 0) {
+      rangeStartId = allFetchedPosts[allFetchedPosts.length - 1].id;
+      rangeEndId = allFetchedPosts[0].id;
+    }
+  };
 
   try {
     while (stillFetching) {
-      console.log(`Fetching offset=${currentOffset} (multiple of 50), loadAll=${loadAll}, filter=${JSON.stringify(currentFilter)}`);
+      if (signal.aborted) throw signal.reason;
       const { posts: newPosts } = await fetchPostListPage(
+        siteKey,
         service,
         creatorId,
         currentOffset,
-        POSTS_PER_PAGE_FOR_LIST,
-        { q: currentFilter.q, tag: currentFilter.tag }
+        { q: currentFilter.q, tag: currentFilter.tag, signal }
       );
-
-      console.log(`Fetched ${newPosts.length} posts at offset ${currentOffset} (expected up to 50)`);
 
       if (newPosts.length === 0) {
         atEndOfPosts = true;
@@ -480,7 +547,6 @@ async function loadPostsPage(offsetToLoad, loadAll = false) {
       const uniqueNewPosts = newPosts.filter((p) => !existingIds.has(p.id));
       accumulatedPosts = [...accumulatedPosts, ...uniqueNewPosts];
 
-      pagesFetchedInThisCall++;
       currentOffset += POSTS_PER_PAGE_FOR_LIST;
 
       // Stop conditions
@@ -490,36 +556,24 @@ async function loadPostsPage(offsetToLoad, loadAll = false) {
           atEndOfPosts = true;
         }
       } else if (newPosts.length < POSTS_PER_PAGE_FOR_LIST) {
-        if (currentOffset >= totalAvailablePosts) {
-          atEndOfPosts = true;
-          stillFetching = false;
-        }
+        atEndOfPosts = true;
+        stillFetching = false;
       }
     }
 
-    allFetchedPosts = accumulatedPosts.sort(
-      (a, b) => new Date(b.published).getTime() - new Date(a.published).getTime()
-    );
-
-    totalFetchedOffset += pagesFetchedInThisCall * POSTS_PER_PAGE_FOR_LIST;
-    console.log(`Accumulated ${allFetchedPosts.length} unique posts, new offset=${totalFetchedOffset}, atEnd=${atEndOfPosts}`);
-
-    if (allFetchedPosts.length > 0) {
-      const oldestId = allFetchedPosts[allFetchedPosts.length - 1].id;
-      const newestId = allFetchedPosts[0].id;
-      rangeStartId = oldestId;
-      rangeEndId = newestId;
-      console.log(`Range: ${rangeStartId.substring(0,8)}... to ${rangeEndId.substring(0,8)}...`);
-    }
-
+    commitAccumulatedPosts();
   } catch (err) {
+    if (err?.name === "AbortError") return;
+    commitAccumulatedPosts();
     error = err.message || "Failed to load posts.";
-    atEndOfPosts = true;
     console.error("Error fetching posts for EPUB list:", err);
   } finally {
-    isLoadingPosts = false;
-    isLoadingMore = false;
-    updateOverallUIState();
+    if (postsLoadController === loadController) {
+      isLoadingPosts = false;
+      isLoadingMore = false;
+      postsLoadController = null;
+      updateOverallUIState();
+    }
   }
 }
 
@@ -596,7 +650,11 @@ function handleFilenamePatternChange(event) {
 }
 
 function handleLoadMore() {
-  if (!atEndOfPosts && totalFetchedOffset < totalAvailablePosts && !isLoadingMore) {
+  if (
+    !atEndOfPosts &&
+    (totalAvailablePosts == null || totalFetchedOffset < totalAvailablePosts) &&
+    !isLoadingMore
+  ) {
     loadPostsPage(totalFetchedOffset);
   }
 }
@@ -608,6 +666,17 @@ function handleLoadAll() {
 }
 
 async function handlePackEpub() {
+  if (isPacking) {
+    if (!packingAbortController?.signal.aborted) {
+      progressMessage = "Cancelling EPUB generation...";
+      packingAbortController?.abort(
+        new DOMException("Generation cancelled.", "AbortError")
+      );
+      updatePackingProgressUI();
+    }
+    return;
+  }
+
   const postsToPackStubs = allFetchedPosts
     .filter((post) => selectedPosts[post.id])
     .sort(
@@ -621,6 +690,7 @@ async function handlePackEpub() {
   }
 
   isPacking = true;
+  packingAbortController = new AbortController();
   progress = 0;
   progressMessage = "Starting EPUB generation...";
   error = null;
@@ -636,29 +706,38 @@ async function handlePackEpub() {
 
     const effectiveCoverUrl = enableCover ? (coverImageUrl || undefined) : undefined;
 
-    await generateKemonoEpub(
-      { service, creatorId, creatorName },
+    const result = await generateKemonoEpub(
+      { site: siteKey, service, creatorId, creatorName },
       postsToPackStubs,
       {
         fileName: fileNameToUse,
         coverImageUrl: effectiveCoverUrl,
         customQ: currentFilter.q,
-        tagFilter: currentFilter.tag
+        tagFilter: currentFilter.tag,
+        signal: packingAbortController.signal
       },
       (currentProgress, message) => {
         progress = currentProgress >= 0 ? currentProgress : progress;
         progressMessage = message;
-        updateOverallUIState();
+        updatePackingProgressUI();
       }
     );
-    progressMessage = "EPUB generated and download started!";
+    progressMessage = result.skippedPosts.length
+      ? `EPUB generated; ${result.skippedPosts.length} post(s) were skipped.`
+      : "EPUB generated and download started!";
   } catch (err) {
-    error = err.message || "Failed to generate EPUB.";
-    console.error("EPUB Packing Error:", err);
-    progressMessage = `Error: ${err.message.substring(0, 50)}...`;
+    if (err?.name === "AbortError") {
+      progressMessage = "EPUB generation cancelled.";
+    } else {
+      error = err.message || "Failed to generate EPUB.";
+      console.error("EPUB Packing Error:", err);
+      progressMessage = `Error: ${err.message.substring(0, 50)}...`;
+    }
   } finally {
+    const wasCancelled = !!packingAbortController?.signal.aborted;
     isPacking = false;
-    if (!error) progress = 100;
+    packingAbortController = null;
+    if (!error && !wasCancelled) progress = 100;
     updateOverallUIState();
   }
 }
@@ -777,25 +856,39 @@ document.addEventListener("DOMContentLoaded", async () => {
   
   setupUIAndListeners();
 
+  if (queryParams.permissionError) {
+    error = queryParams.permissionError;
+    isLoadingPosts = false;
+    updateOverallUIState();
+    return;
+  }
+
   // Standard Logic (Creator Page / Bulk Download)
   service = queryParams.service || "";
   creatorId = queryParams.id || "";
   creatorName = queryParams.name || "";
+  siteKey = queryParams.site || (service && creatorId ? "kemono" : "");
+  if (siteKey && !ExtensionSites.sites[siteKey]) {
+    error = `Unsupported source site: ${siteKey}`;
+    isLoadingPosts = false;
+    updateOverallUIState();
+    return;
+  }
 
-  if (enableCover && !coverImageUrl) {
-    coverImageUrl = `${KEMONO_IMG_BASE_URL_DEFAULT_ICON}/icons/${service}/${creatorId}`;
+  if (enableCover && !coverImageUrl && siteKey && service && creatorId) {
+    coverImageUrl = ExtensionSites.get(siteKey).iconUrl(service, creatorId);
     sampleCover = coverImageUrl;
     if (coverImageUrlInput) coverImageUrlInput.value = coverImageUrl;
     updateCoverPreviewDisplay();
   }
 
-  if (service && creatorId) {
+  if (siteKey && service && creatorId) {
     await loadTagsAndPopulateDropdown();
     await loadPostsPage(0);
   } else {
     // If opened via icon click without parameters, or error
     if (!service && !creatorId) {
-      error = "Missing service or creator ID. Please navigate to a creator's page on Kemono.";
+      error = "Missing source information. Please navigate to a creator page on Kemono or Pawchive.";
     } else {
       error = "Missing service or creator ID.";
     }

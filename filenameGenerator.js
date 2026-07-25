@@ -2,13 +2,20 @@
 
 export function sanitizeAndTruncate(text, maxLength) {
   if (typeof text !== "string") return "";
-  const sanitized = text.replace(/[/\\?%*:|"<>]/g, "_").replace(/__+/g, "_");
-  return sanitized.substring(0, maxLength);
+  const sanitized = text
+    .replace(/[\u0000-\u001F\u007F/\\?%*:|"<>]/g, "_")
+    .replace(/__+/g, "_")
+    .trim()
+    .replace(/[. ]+$/g, "");
+  return Array.from(sanitized).slice(0, maxLength).join("");
 }
 
 export function truncateTitle(title, maxLength = 70) {
   if (!title) return "Untitled";
-  return title.length > maxLength ? `${title.substring(0, maxLength)}...` : title;
+  const characters = Array.from(String(title));
+  return characters.length > maxLength
+    ? `${characters.slice(0, maxLength).join("")}...`
+    : String(title);
 }
 
 // Extracts the first number from a string, supporting decimals (e.g., "124.1" → "124.1").
@@ -17,7 +24,7 @@ export function extractNumber(text) {
   if (!text) return "";
 
   // Regex for numbers with optional decimal
-  const digitMatch = text.match(/(\d+\.?\d*)/);
+  const digitMatch = text.match(/(\d+(?:\.\d+)?)/);
   if (digitMatch) {
     return digitMatch[1];
   }
@@ -29,7 +36,7 @@ export function extractNumber(text) {
 // Uses extractNumber (digit-only).
 function extractNumbersFromTitle(text) {
   if (!text) return [];
-  const matches = text.match(/(\d+\.?\d*)/g) || [];
+  const matches = text.match(/(\d+(?:\.\d+)?)/g) || [];
   return matches.map(numStr => extractNumber(numStr));
 }
 
@@ -53,16 +60,26 @@ function wordedExtractNumber(text) {
     'hundred': 100, 'thousand': 1000
   };
 
-  // Clean entire text: lowercase, remove punctuation, handle compounds ("forty-one"), remove "and", normalize spaces
+  // Clean text and keep the first contiguous number phrase. This avoids
+  // combining unrelated words such as "one story, chapter two" into 3.
   let cleanPhrase = text.toLowerCase()
     .replace(/[.,;:!?]/g, '')  // Remove common punctuation (handles trailing ".")
     .replace(/-/g, ' ')  // Hyphens to spaces (e.g., "thirty-nine" → "thirty nine")
-    .replace(/\band\b/gi, '')  // Remove whole "and" (no extra space, as it's a connector)
     .replace(/\s+/g, ' ')  // Collapse multiple spaces
     .trim();
 
-  // Split into words and filter valid ones
-  const words = cleanPhrase.split(/\s+/).filter(w => w && wordMap.hasOwnProperty(w));
+  const phrases = [];
+  let currentPhrase = [];
+  for (const word of cleanPhrase.split(/\s+/)) {
+    if (Object.hasOwn(wordMap, word) || (word === "and" && currentPhrase.length)) {
+      currentPhrase.push(word);
+    } else if (currentPhrase.length) {
+      phrases.push(currentPhrase);
+      currentPhrase = [];
+    }
+  }
+  if (currentPhrase.length) phrases.push(currentPhrase);
+  const words = (phrases[0] || []).filter(word => word !== "and");
 
   if (words.length === 0) return "";
 

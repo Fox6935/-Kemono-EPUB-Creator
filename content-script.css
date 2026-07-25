@@ -1,0 +1,100 @@
+:is(#kemono-epub-download-button, #kemono-single-epub-btn).kemono-epub-button {
+  box-sizing: border-box;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  min-height: 2.25rem;
+  margin: 0.35rem 0 0.35rem 0.6rem;
+  padding: 0.45rem 0.8rem;
+  vertical-align: middle;
+  border: 1px solid #2f7fce;
+  border-radius: 0.45rem;
+  background: linear-gradient(180deg, #1674d1 0%, #075ba9 100%);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.75em;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 80ms ease;
+}
+
+:is(#kemono-epub-download-button, #kemono-single-epub-btn).kemono-epub-button:hover:not(:disabled) {
+  border-color: #66aeef;
+  background: linear-gradient(180deg, #2387e7 0%, #0866bc 100%);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+:is(#kemono-epub-download-button, #kemono-single-epub-btn).kemono-epub-button:active:not(:disabled) {
+  transform: translateY(1px);
+  background: #07569e;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+:is(#kemono-epub-download-button, #kemono-single-epub-btn).kemono-epub-button:focus-visible {
+  outline: 3px solid rgba(113, 190, 255, 0.78);
+  outline-offset: 2px;
+}
+
+:is(#kemono-epub-download-button, #kemono-single-epub-btn).kemono-epub-button:disabled {
+  border-color: #59636d;
+  background: #414950;
+  box-shadow: none;
+  color: #c8cdd2;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.kemono-epub-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  font-size: 1.05em;
+  line-height: 1;
+}
+
+.kemono-epub-button__label {
+  line-height: 1.1;
+}
+
+@media (max-width: 520px) {
+  :is(#kemono-epub-download-button, #kemono-single-epub-btn).kemono-epub-button {
+    min-height: 2.1rem;
+    margin-left: 0.35rem;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.7em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(#kemono-epub-download-button, #kemono-single-epub-btn).kemono-epub-button {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  :is(#kemono-epub-download-button, #kemono-single-epub-btn).kemono-epub-button {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+    box-shadow: none;
+    color: ButtonText;
+    text-shadow: none;
+  }
+}
