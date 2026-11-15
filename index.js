@@ -112,14 +112,6 @@ function filterPostsForDisplay() {
 // Load tags and populate dropdown
 async function loadTagsAndPopulateDropdown() {
   if (!service || !creatorId) return;
-  const site = ExtensionSites.get(siteKey);
-  if (!site.supportsTags) {
-    tagSelect.innerHTML = '<option value="custom">Custom Search</option>';
-    tagSelect.value = "custom";
-    currentFilter.tag = "";
-    updateFilterUI();
-    return;
-  }
   try {
     isLoadingPosts = true;
     availableTags = await fetchTagsList(siteKey, service, creatorId);
@@ -394,7 +386,7 @@ function updateOverallUIState() {
   const showNoPostsMessage =
     !isLoadingPosts && allFetchedPosts.length === 0 && !error;
   const showMainContentWrapper =
-    !showLoadingMessage && allFetchedPosts.length > 0;
+    !showLoadingMessage && !!(siteKey && service && creatorId);
 
   if (mainContentSectionsWrapper) {
     mainContentSectionsWrapper.style.display = showMainContentWrapper
@@ -473,9 +465,9 @@ async function loadPostsPage(offsetToLoad, loadAll = false) {
         { signal }
       );
       totalAvailablePosts = postCount;
-      if (siteKey === "kemono" && currentFilter.q) {
+      if (currentFilter.q) {
         totalAvailablePosts = null;
-      } else if (siteKey === "kemono" && currentFilter.tag) {
+      } else if (currentFilter.tag) {
         totalAvailablePosts =
           availableTags.find((tag) => tag.tag === currentFilter.tag)?.post_count ?? null;
       }
@@ -483,7 +475,7 @@ async function loadPostsPage(offsetToLoad, loadAll = false) {
       if (typeof apiCreatorName === "string" && apiCreatorName.trim()) {
         creatorName = apiCreatorName.trim();
       }
-      if (siteKey === "pawchive") {
+      if (siteKey === "pawchive" && !currentFilter.tag) {
         const requestVersion = ++countRequestVersion;
         try {
           const scrapedCount = await fetchPawchivePostCount(

@@ -7,7 +7,6 @@
       siteOrigin: "https://kemono.cr",
       apiOrigin: "https://kemono.cr/api/v1",
       apiAccept: "text/css",
-      supportsTags: true,
       profileHasPostCount: true,
       permissionOrigins: [
         "https://kemono.cr/*",
@@ -24,7 +23,6 @@
       siteOrigin: "https://pawchive.pw",
       apiOrigin: "https://pawchive.pw/api/v1",
       apiAccept: "application/json",
-      supportsTags: false,
       profileHasPostCount: false,
       permissionOrigins: [
         "https://pawchive.pw/*",
