@@ -1077,10 +1077,24 @@ class EpubPacker {
       this.manifestItems.push({ id: "css", href: "Styles/stylesheet.css", mediaType: "text/css" });
   }
 
-  addCoverImage(imageBlob, fileNameInEpub, mimeType) {
+  async addImageFile(fileNameInEpub, blob) {
+    // Strings avoid JSZip's cross-realm binary type checks in Firefox content scripts.
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        resolve(dataUrl.slice(dataUrl.indexOf(",") + 1));
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    this.getImagesFolder().file(fileNameInEpub, base64, { base64: true });
+  }
+
+  async addCoverImage(imageBlob, fileNameInEpub, mimeType) {
     const imageId = "cover-image";
     const imagePath = `Images/${fileNameInEpub}`;
-    this.getImagesFolder().file(fileNameInEpub, imageBlob);
+    await this.addImageFile(fileNameInEpub, imageBlob);
     this.manifestItems.push({
       id: imageId,
       href: imagePath,
@@ -1097,16 +1111,16 @@ class EpubPacker {
     this.spineOrder.unshift("cover-xhtml");
   }
 
-  addImageToManifest(imageInfo) {
+  async addImageToManifest(imageInfo) {
     const { blob, fileNameInEpub, mimeType } = imageInfo;
     if (this.usedImagePaths.has(fileNameInEpub)) return;
+    await this.addImageFile(fileNameInEpub, blob);
     this.usedImagePaths.add(fileNameInEpub);
     
     let imageId = `img-${this.imageIdCounter++}`;
     while (this.usedImageIds.has(imageId)) imageId = `img-${this.imageIdCounter++}`;
     this.usedImageIds.add(imageId);
     
-    this.getImagesFolder().file(fileNameInEpub, blob);
     this.manifestItems.push({ id: imageId, href: `Images/${fileNameInEpub}`, mediaType: mimeType });
   }
 
