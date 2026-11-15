@@ -25,7 +25,7 @@ directly from their webpages.
   - Limit the selection to a first and last chapter.
   - Load the next 50 posts or all remaining posts.
 - **Post filtering**:
-  - Filter Kemono posts using tags.
+  - Filter Kemono and Pawchive posts using tags.
   - Search posts using a custom query.
 - **Dynamic filenames**:
   - `{FirstPostTitle}-{LastPostTitle}.epub` (default)
@@ -105,7 +105,7 @@ officially supported or tested by this project.
    and last chapter controls.
 5. Use **Load Next 50 Posts** or **Load All Remaining Posts** when more posts
    are available. Requests are intentionally rate-limited.
-6. Optionally apply a Kemono tag filter or enter a custom search query.
+6. Optionally apply a tag filter or enter a custom search query.
 7. Choose a filename pattern or edit the filename manually.
 8. Optionally enable or change the cover image.
 9. Select **Pack [X] Post(s) as EPUB**.

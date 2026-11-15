@@ -43,10 +43,11 @@ function requestSignal(externalSignal, timeoutMs = ASSET_FETCH_TIMEOUT_MS) {
   };
 }
 
-async function fetchWithTimeout(url, options = {}, externalSignal) {
+async function fetchWithTimeout(url, options, externalSignal, readResponse) {
   const request = requestSignal(externalSignal);
   try {
-    return await fetch(url, { ...options, signal: request.signal });
+    const response = await fetch(url, { ...options, signal: request.signal });
+    return await readResponse(response);
   } catch (error) {
     if (request.didTimeOut()) {
       throw new Error(`Request timed out after ${ASSET_FETCH_TIMEOUT_MS / 1000} seconds.`);
@@ -99,41 +100,45 @@ const HttpClient = {
   async fetchJson(siteKey, url, { signal } = {}) {
     const site = ExtensionSites.get(siteKey);
     await ensureApiRateLimit(siteKey, signal);
-    const res = await fetchWithTimeout(
+    return fetchWithTimeout(
       url,
       { headers: { Accept: site.apiAccept } },
-      signal
+      signal,
+      async (res) => {
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new HttpError(
+            res.status,
+            `${site.name} API request failed: ${res.status} - ${txt.substring(0, 200)}`
+          );
+        }
+        return res.json();
+      }
     );
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "Failed to read error response.");
-      throw new HttpError(
-        res.status,
-        `${site.name} API request failed: ${res.status} - ${txt.substring(0, 200)}`
-      );
-    }
-    return res.json();
   },
 
   async fetchBlob(siteKey, url, { signal } = {}) {
     await ensureApiRateLimit(siteKey, signal);
-    const res = await fetchWithTimeout(
+    return fetchWithTimeout(
       url,
       { headers: { Accept: "image/*,*/*;q=0.8" } },
-      signal
+      signal,
+      async (res) => {
+        if (!res.ok) {
+          throw new Error(`Asset request failed: ${res.status}`);
+        }
+        const declaredSize = Number(res.headers.get("content-length"));
+        if (Number.isFinite(declaredSize) && declaredSize > MAX_SINGLE_ASSET_BYTES) {
+          await res.body?.cancel();
+          throw new Error(`Asset exceeds the ${MAX_SINGLE_ASSET_BYTES / 1024 / 1024} MiB limit.`);
+        }
+        const blob = await res.blob();
+        if (blob.size > MAX_SINGLE_ASSET_BYTES) {
+          throw new Error(`Asset exceeds the ${MAX_SINGLE_ASSET_BYTES / 1024 / 1024} MiB limit.`);
+        }
+        return blob;
+      }
     );
-    if (!res.ok) {
-      throw new Error(`Asset request failed: ${res.status}`);
-    }
-    const declaredSize = Number(res.headers.get("content-length"));
-    if (Number.isFinite(declaredSize) && declaredSize > MAX_SINGLE_ASSET_BYTES) {
-      await res.body?.cancel();
-      throw new Error(`Asset exceeds the ${MAX_SINGLE_ASSET_BYTES / 1024 / 1024} MiB limit.`);
-    }
-    const blob = await res.blob();
-    if (blob.size > MAX_SINGLE_ASSET_BYTES) {
-      throw new Error(`Asset exceeds the ${MAX_SINGLE_ASSET_BYTES / 1024 / 1024} MiB limit.`);
-    }
-    return blob;
   }
 };
 
@@ -182,7 +187,6 @@ function isCompletePost(siteKey, post) {
 
 export async function fetchTagsList(siteKey, service, creatorId, { signal } = {}) {
   const site = ExtensionSites.get(siteKey);
-  if (!site.supportsTags) return [];
   const url = `${site.apiOrigin}${ExtensionSites.creatorPath(service, creatorId)}/tags`;
   try {
     const tags = unwrapTags(await HttpClient.fetchJson(siteKey, url, { signal }));
@@ -831,13 +835,15 @@ export async function fetchPawchivePostCount(service, creatorId, q = "", { signa
   const path = ExtensionSites.creatorPath(service, creatorId);
   const url = new URL(path, "https://pawchive.pw");
   if (q && q.length >= 3) url.searchParams.set("q", q);
-  const response = await fetchWithTimeout(
+  return fetchWithTimeout(
     url,
     { headers: { Accept: "text/html,application/xhtml+xml" } },
-    signal
+    signal,
+    async (response) => {
+      if (!response.ok) throw new Error(`Pawchive count page failed: ${response.status}`);
+      return parsePawchivePostCount(await response.text());
+    }
   );
-  if (!response.ok) throw new Error(`Pawchive count page failed: ${response.status}`);
-  return parsePawchivePostCount(await response.text());
 }
 
 // MAIN GENERATOR
@@ -947,7 +953,7 @@ img { max-width: 100%; height: auto; }
   
   // TRACKER FOR FILENAME UNIQUENESS
   // Set contains lowercase versions of all filenames used so far
-  const usedFilenames = new Set();
+  const usedFilenames = new Set(["toc", "cover"]);
 
   for (let i = 0; i < numPosts; i++) {
     throwIfAborted(signal);
